@@ -308,6 +308,173 @@
         );
       }
 
+      // Rich impact analysis for geo_hazard — candidate simulation, distribution,
+      // per-region/division breakdown, flagged policies. Mirrors v1's layout but
+      // built directly on /api/datasets/geo_hazard/impact which rescores every
+      // 2024 policy in a single SQL scan.
+      function GeoHazardImpact({ impact }) {
+        const s = impact.summary;
+        const totalSign = s.total_delta >= 0 ? "+" : "";
+        const increasedPct = s.affected_policies > 0 ? (s.n_increased / s.affected_policies) : 0;
+        return (
+          <div className="space-y-6">
+            <InfoBanner icon={AlertTriangle} tone="amber" title="Candidate dataset scenario">
+              <p className="mb-2">{impact.scenario.description}</p>
+              <p className="text-xs"><strong>Pricing rule:</strong> {impact.scenario.pricing_rule}</p>
+              <p className="text-xs"><strong>Reproducibility:</strong> {impact.scenario.deterministic}</p>
+            </InfoBanner>
+
+            {/* ---------- Portfolio summary ---------- */}
+            <div>
+              <h4 className="font-medium text-slate-800 mb-2">Portfolio-level bottom line</h4>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Card>
+                  <StatNumber value={fmt(s.total_policies)} label="Policies in book (2024)" />
+                </Card>
+                <Card>
+                  <div className="text-2xl font-semibold text-slate-900">{fmt(s.affected_policies)}</div>
+                  <div className="text-xs uppercase tracking-wide text-slate-500 mt-1">Policies re-rated</div>
+                  <div className="text-xs text-slate-400 mt-0.5">{pct(s.affected_pct, 2)} of book</div>
+                </Card>
+                <Card>
+                  <div className="text-2xl font-semibold text-slate-900">£{fmt(Math.round(s.current_premium))}</div>
+                  <div className="text-xs uppercase tracking-wide text-slate-500 mt-1">Current premium</div>
+                  <div className="text-xs text-slate-400 mt-0.5">against current geo_hazard</div>
+                </Card>
+                <Card>
+                  <div className={`text-2xl font-semibold ${s.total_delta >= 0 ? "text-amber-700" : "text-emerald-700"}`}>
+                    {totalSign}£{fmt(Math.round(s.total_delta))}
+                  </div>
+                  <div className="text-xs uppercase tracking-wide text-slate-500 mt-1">Portfolio Δ</div>
+                  <div className="text-xs text-slate-400 mt-0.5">
+                    {pct(s.total_delta_pct, 2)} bottom-line impact
+                  </div>
+                </Card>
+                <Card>
+                  <StatNumber value={fmt(s.n_increased)} label="Policies re-rated UP" hint={`${pct(increasedPct, 0)} of affected`} />
+                </Card>
+                <Card>
+                  <StatNumber value={fmt(s.n_decreased)} label="Policies re-rated DOWN" />
+                </Card>
+                <Card>
+                  <div className="text-2xl font-semibold text-red-700">{fmt(s.flagged_over_10pct)}</div>
+                  <div className="text-xs uppercase tracking-wide text-slate-500 mt-1">Flagged (&gt;10% change)</div>
+                  <div className="text-xs text-slate-400 mt-0.5">actuary-sensitive</div>
+                </Card>
+                <Card>
+                  <div className="text-2xl font-semibold text-slate-900">£{fmt(Math.round(s.candidate_premium))}</div>
+                  <div className="text-xs uppercase tracking-wide text-slate-500 mt-1">Candidate premium</div>
+                  <div className="text-xs text-slate-400 mt-0.5">if approved</div>
+                </Card>
+              </div>
+            </div>
+
+            {/* ---------- Distribution histogram ---------- */}
+            <Card title="Distribution — % change per policy"
+              right={<div className="text-xs text-slate-500">{fmt(s.total_policies - s.affected_policies)} policies unchanged</div>}>
+              <BarChart
+                data={(impact.distribution || []).map((b) => ({ label: b.bucket, value: Number(b.n || 0) }))}
+                color="#8b5cf6" />
+            </Card>
+
+            {/* ---------- Postcode-level changes ---------- */}
+            <Card title={`Postcode sectors that changed (top ${impact.postcode_changes?.length || 0} by £ impact)`}
+              right={<Badge tone="slate">source-level diff</Badge>}>
+              <Table
+                columns={[
+                  { key: "postcode_sector",   label: "Postcode sector", className: "font-mono text-xs" },
+                  { key: "current_flood",     label: "Current zone" },
+                  { key: "candidate_flood",   label: "Candidate zone" },
+                  { key: "flood_delta",       label: "Δ", render: (r) => (
+                    <Badge tone={r.flood_delta > 0 ? "amber" : "emerald"}>
+                      {r.flood_delta > 0 ? "+" : ""}{r.flood_delta}
+                    </Badge>
+                  ) },
+                  { key: "policies_in_sector",label: "Policies affected", render: (r) => fmt(r.policies_in_sector) },
+                  { key: "sector_delta",      label: "£ impact", render: (r) => (
+                    <span className={r.sector_delta >= 0 ? "text-amber-700" : "text-emerald-700"}>
+                      {r.sector_delta >= 0 ? "+" : ""}£{fmt(Math.round(r.sector_delta))}
+                    </span>
+                  ) },
+                ]}
+                rows={impact.postcode_changes || []} />
+            </Card>
+
+            {/* ---------- Per-region impact ---------- */}
+            <Card title="Impact by region">
+              <Table
+                columns={[
+                  { key: "region", label: "Region", className: "font-medium" },
+                  { key: "n_policies", label: "Policies", render: (r) => fmt(r.n_policies) },
+                  { key: "n_affected", label: "Affected", render: (r) => fmt(r.n_affected) },
+                  { key: "current_premium",  label: "Current £",   render: (r) => `£${fmt(Math.round(r.current_premium || 0))}` },
+                  { key: "candidate_premium",label: "Candidate £", render: (r) => `£${fmt(Math.round(r.candidate_premium || 0))}` },
+                  { key: "delta", label: "Δ £", render: (r) => (
+                    <span className={r.delta >= 0 ? "text-amber-700" : "text-emerald-700"}>
+                      {r.delta >= 0 ? "+" : ""}£{fmt(Math.round(r.delta || 0))}
+                    </span>
+                  ) },
+                  { key: "delta_pct", label: "Δ %", render: (r) => (
+                    <span className={r.delta >= 0 ? "text-amber-700" : "text-emerald-700"}>
+                      {pct(r.current_premium ? r.delta / r.current_premium : 0, 2)}
+                    </span>
+                  ) },
+                ]}
+                rows={impact.per_region || []} />
+            </Card>
+
+            {/* ---------- Per-division impact (class of business) ---------- */}
+            <Card title="Impact by SIC division (class of business)">
+              <Table
+                columns={[
+                  { key: "division", label: "Division", className: "font-medium" },
+                  { key: "n_policies", label: "Policies", render: (r) => fmt(r.n_policies) },
+                  { key: "n_affected", label: "Affected", render: (r) => fmt(r.n_affected) },
+                  { key: "current_premium",  label: "Current £",   render: (r) => `£${fmt(Math.round(r.current_premium || 0))}` },
+                  { key: "candidate_premium",label: "Candidate £", render: (r) => `£${fmt(Math.round(r.candidate_premium || 0))}` },
+                  { key: "delta", label: "Δ £", render: (r) => (
+                    <span className={r.delta >= 0 ? "text-amber-700" : "text-emerald-700"}>
+                      {r.delta >= 0 ? "+" : ""}£{fmt(Math.round(r.delta || 0))}
+                    </span>
+                  ) },
+                ]}
+                rows={impact.per_division || []} />
+            </Card>
+
+            {/* ---------- Flagged policies ---------- */}
+            <Card title={`Policies with biggest £ movement (top ${impact.flagged_policies?.length || 0})`}
+              right={<Badge tone="red">for underwriter review</Badge>}>
+              <Table
+                columns={[
+                  { key: "policy_id", label: "Policy", render: (r) => (
+                    <Link to={`/policies/${r.policy_id}`} className="text-blue-600 hover:underline font-mono text-xs">{r.policy_id}</Link>
+                  ) },
+                  { key: "company_name",    label: "Company" },
+                  { key: "postcode_sector", label: "Sector",  className: "font-mono text-xs" },
+                  { key: "region",          label: "Region" },
+                  { key: "flood_zone",      label: "Flood", render: (r) => `${r.current_flood} → ${r.candidate_flood}` },
+                  { key: "current_premium", label: "Current £",   render: (r) => `£${fmt(Math.round(r.current_premium || 0))}` },
+                  { key: "candidate_premium",label:"Candidate £", render: (r) => `£${fmt(Math.round(r.candidate_premium || 0))}` },
+                  { key: "delta", label: "Δ £", render: (r) => (
+                    <span className={r.delta >= 0 ? "text-amber-700" : "text-emerald-700"}>
+                      {r.delta >= 0 ? "+" : ""}£{fmt(Math.round(r.delta || 0))}
+                    </span>
+                  ) },
+                ]}
+                rows={impact.flagged_policies || []} />
+            </Card>
+
+            {/* ---------- AI explain ---------- */}
+            <AgentWidget
+              kind="dq_monitor"
+              title="AI impact summary for the actuary"
+              subtitle="Claude reviews the portfolio metrics, regional and division breakdowns, and the distribution of changes, then writes a one-paragraph recommendation for the approval committee."
+              buttonLabel="Summarise for committee"
+              body={{ dataset_id: "geo_hazard" }} />
+          </div>
+        );
+      }
+
       // Horizontal flow diagram for Home — 7 stages with arrows between.
       function DataFlowDiagram() {
         const stages = [
@@ -719,60 +886,12 @@
                 )
               )}
               {tab === "impact" && (
-                !impact ? <div className="text-sm text-slate-500 italic">Loading shadow pricing simulation…</div> : (
-                  <div className="space-y-5">
-                    <InfoBanner icon={TrendingUp} tone="blue" title="Shadow pricing simulation">
-                      If the silver snapshot of this dataset is adopted for pricing, what's the portfolio-level
-                      £ impact? The simulation moves the <code>{impact.driver_feature}</code> relativity by ±10% — weighted by
-                      this dataset's historical contribution to the premium — and re-aggregates by region + class
-                      of business. An actuary uses this to sense-check the approval decision before flipping the
-                      switch.
-                    </InfoBanner>
-                    <div className="grid grid-cols-4 gap-4">
-                      <Card><StatNumber value={fmt(impact.summary.n_policies)} label="Policies affected" /></Card>
-                      <Card><StatNumber value={`£${fmt(Math.round(impact.summary.current_premium))}`} label="Current premium" /></Card>
-                      <Card><StatNumber value={`£${fmt(Math.round(impact.summary.shadow_premium))}`} label="Shadow premium" /></Card>
-                      <Card>
-                        <div className={`text-2xl font-semibold ${impact.summary.delta >= 0 ? "text-amber-700" : "text-emerald-700"}`}>
-                          {impact.summary.delta >= 0 ? "+" : ""}£{fmt(Math.round(impact.summary.delta))}
-                        </div>
-                        <div className="text-xs uppercase tracking-wide text-slate-500 mt-1">Total delta ({pct(impact.summary.delta_pct, 2)})</div>
-                      </Card>
-                    </div>
-                    <Card title="Impact by region">
-                      <Table
-                        columns={[
-                          { key: "region", label: "Region", className: "font-medium" },
-                          { key: "n_policies", label: "Policies", render: (r) => fmt(r.n_policies) },
-                          { key: "current_premium", label: "Current £",  render: (r) => `£${fmt(Math.round(r.current_premium))}` },
-                          { key: "shadow_premium",  label: "Shadow £",   render: (r) => `£${fmt(Math.round(r.shadow_premium))}` },
-                          { key: "delta",           label: "Δ £",        render: (r) => (
-                            <span className={r.delta >= 0 ? "text-amber-700" : "text-emerald-700"}>
-                              {r.delta >= 0 ? "+" : ""}£{fmt(Math.round(r.delta))}
-                            </span>
-                          ) },
-                          { key: "delta_pct", label: "Δ %", render: (r) => pct(r.delta_pct, 2) },
-                        ]}
-                        rows={impact.per_region} />
-                    </Card>
-                    <Card title="Impact by SIC division">
-                      <Table
-                        columns={[
-                          { key: "division", label: "Division", className: "font-medium" },
-                          { key: "n_policies", label: "Policies", render: (r) => fmt(r.n_policies) },
-                          { key: "current_premium", label: "Current £", render: (r) => `£${fmt(Math.round(r.current_premium))}` },
-                          { key: "shadow_premium",  label: "Shadow £",  render: (r) => `£${fmt(Math.round(r.shadow_premium))}` },
-                          { key: "delta",           label: "Δ £",       render: (r) => (
-                            <span className={r.delta >= 0 ? "text-amber-700" : "text-emerald-700"}>
-                              {r.delta >= 0 ? "+" : ""}£{fmt(Math.round(r.delta))}
-                            </span>
-                          ) },
-                          { key: "delta_pct", label: "Δ %", render: (r) => pct(r.delta_pct, 2) },
-                        ]}
-                        rows={impact.per_division} />
-                    </Card>
-                  </div>
-                )
+                !impact ? <div className="text-sm text-slate-500 italic">Loading shadow-pricing simulation…</div>
+                : impact.scenario === "not_built" ? (
+                  <InfoBanner icon={AlertTriangle} tone="amber" title="Impact simulator not implemented for this dataset">
+                    {impact.message}
+                  </InfoBanner>
+                ) : <GeoHazardImpact impact={impact} />
               )}
               {tab === "schema" && (
                 <Table
