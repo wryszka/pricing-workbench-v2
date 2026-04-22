@@ -192,6 +192,80 @@ pp_glm_gbm = pure_premium_compound(pred_freq, pred_sev_gbm_val)
 # COMMAND ----------
 
 # MAGIC %md
+# MAGIC ## Double-lift chart — GBM severity vs GLM severity (champion vs challenger)
+# MAGIC
+# MAGIC Classic actuarial exhibit: bin policies by the ratio of the challenger's prediction
+# MAGIC to the champion's. In the bins where the challenger says "much higher than champion",
+# MAGIC does the actual loss confirm the challenger's view? If yes, the challenger is adding
+# MAGIC genuine signal and not just noise.
+
+# COMMAND ----------
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+def save_double_lift(y_true, pred_champion, pred_challenger, path, champion_label, challenger_label):
+    """Double-lift: sort by ratio challenger/champion, bin into deciles, show mean
+    actual + mean champion pred + mean challenger pred in each bin."""
+    if pred_champion is None or pred_challenger is None:
+        return None
+    df = pd.DataFrame({
+        "y": np.asarray(y_true, dtype=float),
+        "ch": np.asarray(pred_champion, dtype=float),
+        "cg": np.asarray(pred_challenger, dtype=float),
+    })
+    df["ratio"] = df["cg"] / (df["ch"] + 1e-9)
+    df["decile"] = pd.qcut(df["ratio"].rank(method="first"), q=10, labels=False, duplicates="drop")
+    agg = df.groupby("decile").agg(
+        n=("y", "size"),
+        mean_actual=("y", "mean"),
+        mean_champion=("ch", "mean"),
+        mean_challenger=("cg", "mean"),
+    ).reset_index()
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.plot(agg["decile"], agg["mean_actual"],     marker="s", linewidth=2, label="Actual loss")
+    ax.plot(agg["decile"], agg["mean_champion"],   marker="o", linewidth=2, label=champion_label)
+    ax.plot(agg["decile"], agg["mean_challenger"], marker="^", linewidth=2, label=challenger_label)
+    ax.set_xlabel("Decile of (challenger / champion) prediction ratio")
+    ax.set_ylabel("Mean £ per policy-year")
+    ax.set_title(f"Double-lift — {challenger_label} vs {champion_label} (2024 test)")
+    ax.legend(); ax.grid(alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(path, dpi=110, bbox_inches="tight")
+    plt.close(fig)
+    return agg
+
+# GBM sev vs GLM sev (compound pure premium): both use the same freq_glm leg, so the
+# double-lift reflects the severity-leg disagreement alone.
+dl_dir = f"/Volumes/{catalog}/{schema}/reports/model_factory"
+import os
+os.makedirs(dl_dir, exist_ok=True)
+
+dl_agg = save_double_lift(
+    actual, pp_glm_glm, pp_glm_gbm,
+    path=f"{dl_dir}/double_lift_sev_gbm_vs_sev_glm.png",
+    champion_label="compound (GLM × GLM)",
+    challenger_label="compound (GLM × GBM)",
+)
+if dl_agg is not None:
+    dl_agg.to_csv(f"{dl_dir}/double_lift_sev_gbm_vs_sev_glm.csv", index=False)
+    print(f"✓ {dl_dir}/double_lift_sev_gbm_vs_sev_glm.png")
+
+# Also: pure_premium_xgb vs compound-glm-gbm
+dl_agg2 = save_double_lift(
+    actual, pp_glm_gbm, pred_pp_xgb,
+    path=f"{dl_dir}/double_lift_xgb_vs_compound.png",
+    champion_label="compound (GLM × GBM)",
+    challenger_label="pure_premium_xgb (Tweedie)",
+)
+if dl_agg2 is not None:
+    dl_agg2.to_csv(f"{dl_dir}/double_lift_xgb_vs_compound.csv", index=False)
+    print(f"✓ {dl_dir}/double_lift_xgb_vs_compound.png")
+
+# COMMAND ----------
+
+# MAGIC %md
 # MAGIC ## Compute headline metrics for each candidate
 
 # COMMAND ----------

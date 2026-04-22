@@ -85,6 +85,23 @@ print(f"Train zero-loss rate: {(y_train == 0).mean():.3f}")
 
 # COMMAND ----------
 
+# Monotonicity priors — same regulatory discipline as sev_gbm. XGBoost expects the
+# constraints as a bracketed tuple-string in feature-column order.
+MONO_PRIORS = {
+    "flood_zone_rating":        1,
+    "crime_theft_index":        1,
+    "subsidence_risk":          1,
+    "composite_location_risk":  1,
+    "credit_score":            -1,
+    "business_stability_score":-1,
+    "ccj_count":                1,
+    "years_trading":           -1,
+    "imd_decile":              -1,
+    "building_age_years_at_exposure_start": 1,
+    "proximity_to_fire_station_km":         1,
+}
+mono_tuple = "(" + ",".join(str(MONO_PRIORS.get(c, 0)) for c in feature_cols) + ")"
+
 params = {
     "objective": "reg:tweedie",
     "tweedie_variance_power": 1.5,
@@ -96,6 +113,7 @@ params = {
     "colsample_bytree": 0.9,
     "lambda": 1.0,
     "tree_method": "hist",
+    "monotone_constraints": mono_tuple,
 }
 
 dtrain = xgb.DMatrix(X_train, label=y_train, weight=w_train, feature_names=feature_cols)

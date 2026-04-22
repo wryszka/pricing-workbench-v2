@@ -81,6 +81,25 @@ print(f"Train: {len(X_train):,} | Test: {len(X_test):,}")
 
 # COMMAND ----------
 
+# Monotonicity priors (regulatory defensibility). For features where we have a strong
+# actuarial prior on the direction, we constrain the GBM to respect it. Unconstrained
+# features are left at 0 for the data to drive. Dummy (one-hot) columns are not
+# constrained so that the model can still pick up categorical interactions.
+MONO_PRIORS = {
+    "flood_zone_rating":        1,   # higher flood zone → higher loss
+    "crime_theft_index":        1,   # higher crime → higher theft loss
+    "subsidence_risk":          1,   # higher subsidence → higher subsidence loss
+    "composite_location_risk":  1,   # composite hazard index
+    "credit_score":            -1,   # higher credit → lower claims (financial distress proxy)
+    "business_stability_score":-1,   # more stable business → fewer claims
+    "ccj_count":                1,   # more CCJs → more financial distress
+    "years_trading":           -1,   # longer trading → fewer teething claims
+    "imd_decile":              -1,   # higher decile (less deprived) → lower claims
+    "building_age_years_at_exposure_start": 1,  # older building → more losses
+    "proximity_to_fire_station_km":         1,  # farther from fire station → more fire loss
+}
+monotone_list = [MONO_PRIORS.get(c, 0) for c in feature_cols]
+
 params = {
     "objective": "gamma",
     "learning_rate": 0.05,
@@ -91,6 +110,8 @@ params = {
     "bagging_fraction": 0.9,
     "bagging_freq": 5,
     "lambda_l2": 1.0,
+    "monotone_constraints": monotone_list,
+    "monotone_constraints_method": "advanced",
     "verbose": -1,
 }
 
