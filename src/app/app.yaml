@@ -6,6 +6,20 @@ command:
   - "--port"
   - "8000"
 
+# Resource bindings — Databricks Apps injects connection env vars for each bound
+# resource. The SQL warehouse shows up as $warehouse_id and an OAuth token.
+resources:
+  - name: "warehouse"
+    description: "SQL warehouse for app queries over the pricing workbench schema"
+    sql_warehouse:
+      id: "ab79eced8207d29b"
+      permission: "CAN_USE"
+  - name: "claude_sonnet"
+    description: "Mosaic AI Agent Bricks — Claude Sonnet foundation model"
+    serving_endpoint:
+      name: "databricks-claude-sonnet-4-6"
+      permission: "CAN_QUERY"
+
 env:
   - name: CATALOG_NAME
     value: "lr_serverless_aws_us_catalog"
@@ -17,10 +31,11 @@ env:
     value: "external_landing"
   - name: ENTITY_NAME
     value: "Bricksurance SE"
-  # Genie spaces — fill in the space IDs for the pricing + quote datasets. Empty
-  # values are handled gracefully by the UI (the embed panels show a setup hint).
+  # The warehouse ID our backend reads. Mirrors the resource above.
+  - name: WAREHOUSE_ID
+    value: "ab79eced8207d29b"
+  # Genie spaces — leave blank and the UI shows a setup hint. Populate when ready.
   - name: GENIE_SPACE_PRICING
     value: ""
   - name: GENIE_SPACE_QUOTES
     value: ""
-  # WAREHOUSE_ID and DATABRICKS_* are auto-injected from the app's resource bindings

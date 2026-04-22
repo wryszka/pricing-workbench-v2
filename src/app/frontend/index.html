@@ -88,10 +88,22 @@
       const pct  = (n, d = 1) => (n === null || n === undefined) ? "—" : `${(Number(n) * 100).toFixed(d)}%`;
 
       // ---------- shared components ----------
+      function SidebarUser() {
+        const [me, setMe] = useState(null);
+        useEffect(() => { api("me").then(setMe).catch(() => {}); }, []);
+        if (!me) return null;
+        return (
+          <div className="px-3 py-2 border-t border-slate-700 text-[11px] text-slate-300">
+            <div className="truncate">Signed in as</div>
+            <div className="truncate text-white">{me.email}</div>
+          </div>
+        );
+      }
+
       function Sidebar() {
         const NAV = [
           { to: "/",              label: "Home",               icon: LineChart },
-          { to: "/external-data", label: "External Data",      icon: Database },
+          { to: "/external-data", label: "Ingestion",           icon: Database },
           { to: "/feature-table", label: "Feature Table",      icon: Boxes },
           { to: "/policies",      label: "Policies",           icon: BookOpen },
           { to: "/development",   label: "Model Development",  icon: Sparkles },
@@ -119,6 +131,7 @@
                 </NavLink>
               ))}
             </nav>
+            <SidebarUser />
             <div className="p-3 border-t border-slate-700 text-[10px] text-slate-500 leading-relaxed">
               Not a Databricks product — a demonstration of platform capabilities. Synthetic data.
               {" "}<a className="text-blue-400 hover:underline" href="https://github.com/wryszka/pricing-workbench-v2" target="_blank" rel="noreferrer">Source on GitHub ↗</a>
@@ -515,8 +528,8 @@
         useEffect(() => { api("datasets").then(setData).catch((e) => setErr(String(e))); }, []);
         return (
           <>
-            <PageHeader title="External Data"
-              subtitle="Four vendor feeds arrive as CSVs in the external_landing volume, ingested to raw_* tables, then validated by DLT into silver_* tables." />
+            <PageHeader title="Ingestion"
+              subtitle="Four vendor feeds arrive as CSVs in the external_landing volume, ingested to raw_* tables, then validated by DLT (Lakeflow Declarative Pipelines with expectations) into silver_* tables." />
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
               <InfoBanner icon={Database} tone="blue" title="Databricks features demonstrated on this page">
                 <div className="flex flex-wrap gap-1 mt-1">
@@ -552,26 +565,29 @@
         const { id } = useParams();
         const [data, setData] = useState(null);
         const [approvals, setApprovals] = useState([]);
-        const [tab, setTab] = useState("schema");
-        const [reviewer, setReviewer] = useState("actuary.demo");
+        const [me, setMe] = useState(null);
+        const [tab, setTab] = useState("diff");
         const [notes, setNotes] = useState("");
         const [flash, setFlash] = useState(null);
         const [err, setErr] = useState(null);
         const [quality, setQuality] = useState(null);
         const [diff, setDiff]       = useState(null);
+        const [impact, setImpact]   = useState(null);
         const reload = () => {
           api(`datasets/${id}`).then(setData).catch((e) => setErr(String(e)));
           api(`datasets/${id}/approvals`).then((r) => setApprovals(r.approvals)).catch(() => {});
+          api("me").then(setMe).catch(() => {});
         };
         useEffect(reload, [id]);
         useEffect(() => {
           if (tab === "quality" && !quality) api(`datasets/${id}/quality`).then(setQuality).catch(() => {});
           if (tab === "diff"    && !diff)    api(`datasets/${id}/diff`).then(setDiff).catch(() => {});
+          if (tab === "impact"  && !impact)  api(`datasets/${id}/impact`).then(setImpact).catch(() => {});
         }, [tab, id]);
 
         async function submitDecision(decision) {
           try {
-            await api(`datasets/${id}/approve`, { method: "POST", body: JSON.stringify({ decision, reviewer, notes }) });
+            await api(`datasets/${id}/approve`, { method: "POST", body: JSON.stringify({ decision, notes }) });
             setFlash(`Recorded ${decision}`);
             setNotes("");
             setTimeout(() => setFlash(null), 3000);
@@ -596,14 +612,10 @@
             {flash && <div className="mb-4 p-3 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded text-sm">{flash}</div>}
             <Card title="Actuary approval" className="mb-6">
               <div className="text-sm text-slate-600 mb-3">
-                Record a review decision on the <strong>current Delta snapshot</strong> (raw v{data.raw_count} rows). Both the decision and an audit-log entry will be written.
+                Record a review decision on the <strong>current Delta snapshot</strong> (raw v{data.raw_count} rows).
+                Reviewer identity comes from your Databricks SSO — {me ? <code className="bg-slate-100 px-1 rounded text-xs">{me.email}</code> : "…loading"} — and both the decision plus an audit-log entry will be written.
               </div>
               <div className="flex flex-wrap items-end gap-3">
-                <div>
-                  <label className="text-xs text-slate-500 block">Reviewer</label>
-                  <input value={reviewer} onChange={(e) => setReviewer(e.target.value)}
-                    className="border border-slate-300 rounded px-2 py-1 text-sm w-48" />
-                </div>
                 <div className="flex-1 min-w-64">
                   <label className="text-xs text-slate-500 block">Notes</label>
                   <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional notes"
@@ -629,13 +641,14 @@
             </div>
 
             <div className="flex gap-1 mb-3 border-b border-slate-200">
-              {["diff", "quality", "schema", "sample", "approvals"].map((t) => (
+              {["diff", "quality", "impact", "schema", "sample", "approvals"].map((t) => (
                 <button key={t} onClick={() => setTab(t)}
                   className={`px-3 py-1.5 text-sm border-b-2 -mb-px ${
                     tab === t ? "border-blue-600 text-blue-700 font-medium" : "border-transparent text-slate-600 hover:text-slate-900"
                   }`}>
                   {t === "diff" ? "Raw vs Silver"
                     : t === "quality" ? "Data quality"
+                    : t === "impact" ? "Impact analysis"
                     : t === "schema" ? "Silver schema"
                     : t === "sample" ? "Sample rows"
                     : `Approvals (${approvals.length})`}
@@ -702,6 +715,62 @@
                         ]}
                         rows={quality.expectations} />
                     </div>
+                  </div>
+                )
+              )}
+              {tab === "impact" && (
+                !impact ? <div className="text-sm text-slate-500 italic">Loading shadow pricing simulation…</div> : (
+                  <div className="space-y-5">
+                    <InfoBanner icon={TrendingUp} tone="blue" title="Shadow pricing simulation">
+                      If the silver snapshot of this dataset is adopted for pricing, what's the portfolio-level
+                      £ impact? The simulation moves the <code>{impact.driver_feature}</code> relativity by ±10% — weighted by
+                      this dataset's historical contribution to the premium — and re-aggregates by region + class
+                      of business. An actuary uses this to sense-check the approval decision before flipping the
+                      switch.
+                    </InfoBanner>
+                    <div className="grid grid-cols-4 gap-4">
+                      <Card><StatNumber value={fmt(impact.summary.n_policies)} label="Policies affected" /></Card>
+                      <Card><StatNumber value={`£${fmt(Math.round(impact.summary.current_premium))}`} label="Current premium" /></Card>
+                      <Card><StatNumber value={`£${fmt(Math.round(impact.summary.shadow_premium))}`} label="Shadow premium" /></Card>
+                      <Card>
+                        <div className={`text-2xl font-semibold ${impact.summary.delta >= 0 ? "text-amber-700" : "text-emerald-700"}`}>
+                          {impact.summary.delta >= 0 ? "+" : ""}£{fmt(Math.round(impact.summary.delta))}
+                        </div>
+                        <div className="text-xs uppercase tracking-wide text-slate-500 mt-1">Total delta ({pct(impact.summary.delta_pct, 2)})</div>
+                      </Card>
+                    </div>
+                    <Card title="Impact by region">
+                      <Table
+                        columns={[
+                          { key: "region", label: "Region", className: "font-medium" },
+                          { key: "n_policies", label: "Policies", render: (r) => fmt(r.n_policies) },
+                          { key: "current_premium", label: "Current £",  render: (r) => `£${fmt(Math.round(r.current_premium))}` },
+                          { key: "shadow_premium",  label: "Shadow £",   render: (r) => `£${fmt(Math.round(r.shadow_premium))}` },
+                          { key: "delta",           label: "Δ £",        render: (r) => (
+                            <span className={r.delta >= 0 ? "text-amber-700" : "text-emerald-700"}>
+                              {r.delta >= 0 ? "+" : ""}£{fmt(Math.round(r.delta))}
+                            </span>
+                          ) },
+                          { key: "delta_pct", label: "Δ %", render: (r) => pct(r.delta_pct, 2) },
+                        ]}
+                        rows={impact.per_region} />
+                    </Card>
+                    <Card title="Impact by SIC division">
+                      <Table
+                        columns={[
+                          { key: "division", label: "Division", className: "font-medium" },
+                          { key: "n_policies", label: "Policies", render: (r) => fmt(r.n_policies) },
+                          { key: "current_premium", label: "Current £", render: (r) => `£${fmt(Math.round(r.current_premium))}` },
+                          { key: "shadow_premium",  label: "Shadow £",  render: (r) => `£${fmt(Math.round(r.shadow_premium))}` },
+                          { key: "delta",           label: "Δ £",       render: (r) => (
+                            <span className={r.delta >= 0 ? "text-amber-700" : "text-emerald-700"}>
+                              {r.delta >= 0 ? "+" : ""}£{fmt(Math.round(r.delta))}
+                            </span>
+                          ) },
+                          { key: "delta_pct", label: "Δ %", render: (r) => pct(r.delta_pct, 2) },
+                        ]}
+                        rows={impact.per_division} />
+                    </Card>
                   </div>
                 )
               )}

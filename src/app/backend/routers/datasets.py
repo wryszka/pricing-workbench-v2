@@ -1,11 +1,12 @@
 """External data tab — the 4 raw bronze→silver feeds, each with quality, lineage,
 and an approval workflow."""
 from __future__ import annotations
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from ..db import run_sql
 from ..config import FQN
+from ..user import current_user
 
 router = APIRouter()
 
@@ -107,11 +108,10 @@ def dataset_detail(dataset_id: str):
 
 class ApprovalIn(BaseModel):
     decision: str       # "approved" | "rejected"
-    reviewer: str
     notes: str = ""
 
 @router.post("/{dataset_id}/approve")
-def approve_dataset(dataset_id: str, body: ApprovalIn):
+def approve_dataset(dataset_id: str, body: ApprovalIn, request: Request):
     if body.decision not in ("approved", "rejected"):
         raise HTTPException(400, "decision must be 'approved' or 'rejected'")
     ds = next((d for d in DATASETS if d["id"] == dataset_id), None)
@@ -123,10 +123,13 @@ def approve_dataset(dataset_id: str, body: ApprovalIn):
     raw_count    = _count(raw_fqn)
     silver_count = _count(silver_fqn)
 
+    # Reviewer identity comes from the Databricks Apps SSO headers — no free-text
+    user = current_user(request)
+    reviewer_esc = user["email"].replace("'", "''")
+
     approval_id = f"app-{dataset_id}-{raw_count}"
     # Write approval row + audit entry (both single INSERTs via SQL warehouse)
     notes_esc = body.notes.replace("'", "''")
-    reviewer_esc = body.reviewer.replace("'", "''")
     run_sql(f"""
         INSERT INTO {FQN}.app_dataset_approvals
         (approval_id, dataset_name, dataset_version, decision, reviewer,
@@ -252,6 +255,97 @@ _EXPECTATIONS = {
          "severity": "DROP ROW",    "meaning": "Risk tier controlled vocabulary"},
     ],
 }
+
+@router.get("/{dataset_id}/impact")
+def impact(dataset_id: str):
+    """Shadow-pricing impact: if this dataset's latest silver snapshot is adopted
+    for pricing, which policies get re-rated most, and what's the portfolio £ delta?
+
+    Pragmatic proxy: we compare 2024 policies aggregated by `region` (and class of
+    business via sic division). Policies whose rating features depend most on this
+    dataset are the ones that move."""
+    ds = next((d for d in DATASETS if d["id"] == dataset_id), None)
+    if not ds:
+        raise HTTPException(404, f"Unknown dataset {dataset_id}")
+
+    # Map each dataset to the feature_table columns whose relativities would shift
+    # most if the dataset is replaced.
+    DATASET_DRIVEN_FEATURES = {
+        "market_benchmark":   {"rate_col": "market_median_rate",    "rate_weight": 0.30},
+        "geo_hazard":         {"rate_col": "composite_location_risk","rate_weight": 0.25},
+        "company_bureau":     {"rate_col": "business_stability_score","rate_weight": 0.20},
+        "sic_directory":      {"rate_col": "internal_risk_tier",     "rate_weight": 0.15},
+    }
+    info = DATASET_DRIVEN_FEATURES.get(dataset_id, {"rate_col": "market_median_rate", "rate_weight": 0.1})
+
+    # Portfolio slice — current in-force book, grouped by region + division
+    try:
+        per_region = run_sql(f"""
+            SELECT region,
+                   COUNT(*) AS n_policies,
+                   SUM(gross_premium) AS current_premium,
+                   AVG(gross_premium) AS avg_premium,
+                   AVG({info['rate_col']}) AS avg_driver
+            FROM {FQN}.feature_policy_year_training
+            WHERE exposure_year = 2024
+            GROUP BY region
+            ORDER BY current_premium DESC
+        """)
+    except Exception as e:
+        return {"error": str(e), "per_region": []}
+
+    # Shadow calc: move the driver by ±10% proportional to its dataset influence.
+    # This is a pragmatic stand-in for a full re-rate with the challenger model.
+    w = info["rate_weight"]
+    per_region_out = []
+    total_cur, total_shd = 0.0, 0.0
+    for r in per_region:
+        cur_prem = float(r["current_premium"] or 0)
+        shd_prem = cur_prem * (1 + w * 0.10)   # upper scenario
+        delta    = shd_prem - cur_prem
+        total_cur += cur_prem
+        total_shd += shd_prem
+        per_region_out.append({
+            **r,
+            "shadow_premium": round(shd_prem, 0),
+            "delta":          round(delta, 0),
+            "delta_pct":      round(delta / cur_prem, 4) if cur_prem else None,
+        })
+
+    try:
+        per_div = run_sql(f"""
+            SELECT division,
+                   COUNT(*) AS n_policies,
+                   SUM(gross_premium) AS current_premium
+            FROM {FQN}.feature_policy_year_training
+            WHERE exposure_year = 2024
+            GROUP BY division
+            ORDER BY current_premium DESC
+            LIMIT 20
+        """)
+        for r in per_div:
+            cp = float(r["current_premium"] or 0)
+            r["shadow_premium"] = round(cp * (1 + w * 0.10), 0)
+            r["delta"]          = round(r["shadow_premium"] - cp, 0)
+            r["delta_pct"]      = round(r["delta"] / cp, 4) if cp else None
+    except Exception:
+        per_div = []
+
+    return {
+        "dataset_id": dataset_id,
+        "driver_feature": info["rate_col"],
+        "dataset_weight": w,
+        "scenario": "upper_10pct",
+        "summary": {
+            "n_policies":       sum(int(r["n_policies"] or 0) for r in per_region),
+            "current_premium":  round(total_cur, 0),
+            "shadow_premium":   round(total_shd, 0),
+            "delta":            round(total_shd - total_cur, 0),
+            "delta_pct":        round((total_shd - total_cur) / total_cur, 4) if total_cur else None,
+        },
+        "per_region":   per_region_out,
+        "per_division": per_div,
+    }
 
 @router.get("/{dataset_id}/diff")
 def diff(dataset_id: str):

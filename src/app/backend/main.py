@@ -51,6 +51,11 @@ def health():
         "entity":  config.ENTITY_NAME,
     }
 
+@app.get("/api/me")
+def me(request: Request):
+    from .user import current_user
+    return current_user(request)
+
 # ---------- static frontend ----------
 # Buildless SPA: frontend/index.html pulls React + Tailwind + Lucide from CDN via
 # import maps, and Babel Standalone transforms JSX in the browser. No npm, no dist.
