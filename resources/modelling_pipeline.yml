@@ -79,6 +79,27 @@ resources:
               schema_name: ${var.schema_name}
           environment_key: gbm
 
+        # ---- Regulatory reporting: per-model + cross-model audit ----
+        - task_key: generate_model_reports
+          depends_on:
+            - task_key: model_factory
+          notebook_task:
+            notebook_path: ../src/05_modelling/08_generate_model_reports.py
+            base_parameters:
+              catalog_name: ${var.catalog_name}
+              schema_name: ${var.schema_name}
+          environment_key: reports
+
+        - task_key: fairness_and_robustness
+          depends_on:
+            - task_key: model_factory
+          notebook_task:
+            notebook_path: ../src/05_modelling/09_fairness_and_robustness.py
+            base_parameters:
+              catalog_name: ${var.catalog_name}
+              schema_name: ${var.schema_name}
+          environment_key: reports
+
       environments:
         - environment_key: default
           spec:
@@ -95,3 +116,11 @@ resources:
               - lightgbm
               - xgboost
               - statsmodels
+        - environment_key: reports
+          spec:
+            client: "5"
+            dependencies:
+              - lightgbm
+              - xgboost
+              - statsmodels
+              - shap
