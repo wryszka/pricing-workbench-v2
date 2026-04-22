@@ -17,4 +17,10 @@ env:
     value: "external_landing"
   - name: ENTITY_NAME
     value: "Bricksurance SE"
+  # Genie spaces — fill in the space IDs for the pricing + quote datasets. Empty
+  # values are handled gracefully by the UI (the embed panels show a setup hint).
+  - name: GENIE_SPACE_PRICING
+    value: ""
+  - name: GENIE_SPACE_QUOTES
+    value: ""
   # WAREHOUSE_ID and DATABRICKS_* are auto-injected from the app's resource bindings

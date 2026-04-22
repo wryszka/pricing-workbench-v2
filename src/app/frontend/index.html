@@ -94,6 +94,7 @@
           { to: "/external-data", label: "External Data",      icon: Database },
           { to: "/feature-table", label: "Feature Table",      icon: Boxes },
           { to: "/policies",      label: "Policies",           icon: BookOpen },
+          { to: "/development",   label: "Model Development",  icon: Sparkles },
           { to: "/model-factory", label: "Model Factory",      icon: FlaskConical },
           { to: "/reports",       label: "Regulatory Reports", icon: FileText },
           { to: "/serving",       label: "Serving",            icon: Rocket },
@@ -118,8 +119,9 @@
                 </NavLink>
               ))}
             </nav>
-            <div className="p-3 border-t border-slate-700 text-[11px] text-slate-500">
-              Actuary-accurate pricing pipeline · regulator-ready reports
+            <div className="p-3 border-t border-slate-700 text-[10px] text-slate-500 leading-relaxed">
+              Not a Databricks product — a demonstration of platform capabilities. Synthetic data.
+              {" "}<a className="text-blue-400 hover:underline" href="https://github.com/wryszka/pricing-workbench-v2" target="_blank" rel="noreferrer">Source on GitHub ↗</a>
             </div>
           </aside>
         );
@@ -216,6 +218,79 @@
                 </div>
               );
             })}
+          </div>
+        );
+      }
+
+      // Claude-powered agent widget: a button that fires a POST to /api/agent/<kind>
+      // and renders the result + an expandable transparency panel (system/user prompt,
+      // tokens, latency). Drops onto any page. Uses Databricks Foundation Models, so
+      // the "Model" badge shows the actual endpoint name.
+      function AgentWidget({ kind, title, subtitle, buttonLabel, body = {}, onResultExtract }) {
+        const [state, setState] = useState("idle"); // idle | running | done | error
+        const [result, setResult] = useState(null);
+        const [showTrace, setShowTrace] = useState(false);
+        const [err, setErr] = useState(null);
+
+        async function run() {
+          setState("running"); setErr(null); setResult(null);
+          try {
+            const r = await api(`agent/${kind}`, { method: "POST", body: JSON.stringify(body) });
+            setResult(r); setState("done");
+          } catch (e) {
+            setErr(String(e)); setState("error");
+          }
+        }
+
+        const extracted = result && onResultExtract ? onResultExtract(result) : null;
+
+        return (
+          <div className="bg-gradient-to-br from-violet-50 to-indigo-50 border border-violet-200 rounded-lg p-4">
+            <div className="flex items-start justify-between gap-3 mb-3">
+              <div className="flex items-start gap-2">
+                <div className="p-1.5 rounded bg-violet-100 text-violet-700 shrink-0 mt-0.5"><Sparkles size={14} /></div>
+                <div>
+                  <div className="font-medium text-slate-900 text-sm">{title}</div>
+                  {subtitle && <div className="text-xs text-slate-600 mt-0.5">{subtitle}</div>}
+                  <div className="text-[11px] text-slate-500 mt-1">Powered by Mosaic AI Agent Bricks · <code>databricks-claude-sonnet-4-6</code></div>
+                </div>
+              </div>
+              <button onClick={run} disabled={state === "running"}
+                className="bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white px-3 py-1.5 rounded text-sm flex items-center gap-1 shrink-0">
+                <Sparkles size={14} />
+                {state === "running" ? "Running…" : buttonLabel}
+              </button>
+            </div>
+            {err && <div className="text-red-700 text-xs mt-2 bg-red-50 border border-red-200 rounded p-2">{err}</div>}
+            {result && (
+              <div className="mt-2">
+                <div className="bg-white border border-slate-200 rounded p-3 md-report text-slate-800">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{result.content || ""}</ReactMarkdown>
+                </div>
+                <div className="flex items-center gap-3 text-[11px] text-slate-500 mt-2">
+                  <span>Model: <code>{result.model}</code></span>
+                  <span>· Tokens: {result.prompt_tokens} in / {result.completion_tokens} out</span>
+                  <span>· {result.latency_ms} ms</span>
+                  <button onClick={() => setShowTrace((s) => !s)} className="text-violet-700 hover:underline ml-auto">
+                    {showTrace ? "Hide" : "Show"} transparency trace
+                  </button>
+                </div>
+                {showTrace && (
+                  <div className="mt-2 space-y-2">
+                    <details className="bg-white border border-slate-200 rounded p-2" open>
+                      <summary className="text-xs font-medium text-slate-700 cursor-pointer">System prompt</summary>
+                      <pre className="text-[11px] text-slate-600 whitespace-pre-wrap mt-2">{result.system_prompt}</pre>
+                    </details>
+                    <details className="bg-white border border-slate-200 rounded p-2">
+                      <summary className="text-xs font-medium text-slate-700 cursor-pointer">User prompt</summary>
+                      <pre className="text-[11px] text-slate-600 whitespace-pre-wrap mt-2 max-h-64 overflow-auto">{result.user_prompt}</pre>
+                    </details>
+                    <div className="text-[11px] text-slate-500 italic">This call is logged to <code>app_audit_log</code> with event_type <code>agent_{kind}</code>.</div>
+                  </div>
+                )}
+              </div>
+            )}
+            {extracted}
           </div>
         );
       }
@@ -412,11 +487,24 @@
               })}
             </div>
 
-            <InfoBanner icon={AlertTriangle} tone="amber" title="About this demo">
-              <p><strong>Bricksurance SE Pricing Workbench v2</strong> is a synthetic commercial-insurance pricing pipeline.
-              All data is simulated — no real Bricksurance or partner data is used. Everything you see is generated by the
-              notebooks in <code>src/00_setup</code> / <code>src/03_dimensions</code> at demo time.</p>
-            </InfoBanner>
+            <Card title="About this demo">
+              <div className="text-sm text-slate-700 space-y-3 leading-relaxed">
+                <p>
+                  <strong>This is not a Databricks product.</strong> It is an example of what can be built on the
+                  Databricks platform using standard capabilities (Unity Catalog, Delta Lake, Lakeflow Declarative
+                  Pipelines with expectations, MLflow, Mosaic AI Agent Bricks, Databricks Apps, Feature Engineering,
+                  Genie, Model Serving, Lakebase). The full source code is available on
+                  {" "}<a className="text-blue-600 hover:underline" href="https://github.com/wryszka/pricing-workbench-v2" target="_blank" rel="noreferrer">GitHub</a> —
+                  feel free to fork it, adapt it to your own data, and use it as a starting point.
+                </p>
+                <p>
+                  All company names (<em>Bricksurance SE</em>), policy data, and financial figures are entirely
+                  fictional and generated for illustrative purposes. No real customer data is used. The postcode
+                  enrichment is built from genuine UK public data (ONSPD + IMD 2019 + ONS RUC) — freely available
+                  under the Open Government Licence.
+                </p>
+              </div>
+            </Card>
           </>
         );
       }
@@ -469,11 +557,17 @@
         const [notes, setNotes] = useState("");
         const [flash, setFlash] = useState(null);
         const [err, setErr] = useState(null);
+        const [quality, setQuality] = useState(null);
+        const [diff, setDiff]       = useState(null);
         const reload = () => {
           api(`datasets/${id}`).then(setData).catch((e) => setErr(String(e)));
           api(`datasets/${id}/approvals`).then((r) => setApprovals(r.approvals)).catch(() => {});
         };
         useEffect(reload, [id]);
+        useEffect(() => {
+          if (tab === "quality" && !quality) api(`datasets/${id}/quality`).then(setQuality).catch(() => {});
+          if (tab === "diff"    && !diff)    api(`datasets/${id}/diff`).then(setDiff).catch(() => {});
+        }, [tab, id]);
 
         async function submitDecision(decision) {
           try {
@@ -525,17 +619,92 @@
                 </button>
               </div>
             </Card>
+            <div className="mb-6">
+              <AgentWidget
+                kind="dq_monitor"
+                title="Run AI data-quality scan"
+                subtitle="Claude reviews the silver snapshot for anomalies, outliers, schema shifts, and distribution concerns — tags findings with severity (CRITICAL / WARNING / INFO)."
+                buttonLabel="Scan dataset"
+                body={{ dataset_id: id, user: reviewer }} />
+            </div>
+
             <div className="flex gap-1 mb-3 border-b border-slate-200">
-              {["schema", "sample", "approvals"].map((t) => (
+              {["diff", "quality", "schema", "sample", "approvals"].map((t) => (
                 <button key={t} onClick={() => setTab(t)}
                   className={`px-3 py-1.5 text-sm border-b-2 -mb-px ${
                     tab === t ? "border-blue-600 text-blue-700 font-medium" : "border-transparent text-slate-600 hover:text-slate-900"
                   }`}>
-                  {t === "schema" ? "Silver schema" : t === "sample" ? "Sample rows" : `Approvals (${approvals.length})`}
+                  {t === "diff" ? "Raw vs Silver"
+                    : t === "quality" ? "Data quality"
+                    : t === "schema" ? "Silver schema"
+                    : t === "sample" ? "Sample rows"
+                    : `Approvals (${approvals.length})`}
                 </button>
               ))}
             </div>
             <Card>
+              {tab === "diff" && (
+                !diff ? <div className="text-sm text-slate-500 italic">Loading…</div> : (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-4 gap-4">
+                      <Card><StatNumber value={fmt(diff.raw_count)}    label="Raw rows" /></Card>
+                      <Card><StatNumber value={fmt(diff.silver_count)} label="Silver rows" /></Card>
+                      <Card><StatNumber value={fmt(diff.rows_dropped)} label="Dropped by DLT" /></Card>
+                      <Card><StatNumber value={pct(diff.drop_rate, 2)} label="Drop rate" /></Card>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <Card title={`Shared columns (${diff.columns_shared.length})`}>
+                        <div className="text-xs text-slate-600 space-y-1 max-h-64 overflow-y-auto">
+                          {diff.columns_shared.map((c) => <div key={c} className="font-mono">{c}</div>)}
+                        </div>
+                      </Card>
+                      <Card title={`Only in raw (${diff.columns_only_raw.length})`}>
+                        <div className="text-xs text-slate-600 space-y-1 max-h-64 overflow-y-auto">
+                          {diff.columns_only_raw.length === 0 ? <div className="italic">None — silver is a superset or peer</div>
+                            : diff.columns_only_raw.map((c) => <div key={c} className="font-mono">{c}</div>)}
+                        </div>
+                      </Card>
+                      <Card title={`Only in silver / derived (${diff.columns_only_silver.length})`}>
+                        <div className="text-xs text-slate-600 space-y-1 max-h-64 overflow-y-auto">
+                          {diff.columns_only_silver.length === 0 ? <div className="italic">None — silver is a projection</div>
+                            : diff.columns_only_silver.map((c) => <div key={c} className="font-mono text-emerald-700">{c}</div>)}
+                        </div>
+                      </Card>
+                    </div>
+                  </div>
+                )
+              )}
+              {tab === "quality" && (
+                !quality ? <div className="text-sm text-slate-500 italic">Loading…</div> : (
+                  <div className="space-y-5">
+                    <InfoBanner icon={Gauge} tone="blue" title="Where these metrics come from">
+                      <strong>Completeness</strong> is computed live on the silver view. <strong>Expectations</strong> are the
+                      DLT <code>CONSTRAINT ... EXPECT ... ON VIOLATION</code> clauses defined in <code>src/02_silver/silver_{quality.dataset_id}.sql</code> —
+                      Lakeflow Declarative Pipelines applies them on every refresh and records the drop counts.
+                    </InfoBanner>
+                    <div>
+                      <h4 className="font-medium text-slate-800 mb-2">Column completeness</h4>
+                      <BarChart
+                        data={(quality.completeness || [])
+                          .map((c) => ({ label: c.column, value: Number((c.completeness * 100).toFixed(1)) }))}
+                        unit="%" color="#10b981" />
+                    </div>
+                    <div>
+                      <h4 className="font-medium text-slate-800 mb-2">DLT expectations</h4>
+                      <Table
+                        columns={[
+                          { key: "name",     label: "Rule", className: "font-mono text-xs" },
+                          { key: "expr",     label: "Expression", render: (r) => <code className="text-xs bg-slate-100 px-1 rounded">{r.expr}</code> },
+                          { key: "severity", label: "On violation", render: (r) => (
+                            <Badge tone={r.severity === "FAIL PIPELINE" ? "red" : r.severity === "DROP ROW" ? "amber" : "slate"}>{r.severity}</Badge>
+                          ) },
+                          { key: "meaning",  label: "Meaning" },
+                        ]}
+                        rows={quality.expectations} />
+                    </div>
+                  </div>
+                )
+              )}
               {tab === "schema" && (
                 <Table
                   columns={[
@@ -650,6 +819,14 @@
                 </Link>
               ))}
             </div>
+            <div className="mb-6">
+              <AgentWidget
+                kind="analyze_features"
+                title="AI actuarial review of the feature catalog"
+                subtitle="Claude identifies strengths, gaps, sensitivity concerns, and proposes concrete next-feature candidates from a model-risk-committee perspective."
+                buttonLabel="Analyse catalog" />
+            </div>
+
             <Card title={`Feature catalog (${catalog.length} features)`}
               right={<div className="flex gap-1 flex-wrap">{Object.entries(groupCounts).map(([g, n]) => <Badge key={g} tone="slate">{g}: {n}</Badge>)}</div>}>
               <Table empty="Loading…"
@@ -789,6 +966,15 @@
               <Card><div className="text-xs text-slate-500 uppercase">SIC</div><div className="font-mono text-sm">{p.primary_sic_code}</div></Card>
               <Card><div className="text-xs text-slate-500 uppercase">Inception</div><div className="text-sm">{p.inception_date}</div></Card>
             </div>
+            <div className="mb-6">
+              <AgentWidget
+                kind="explain_pricing"
+                title="Why did this policy price the way it did?"
+                subtitle="Claude reviews the policy's features, SHAP context, and the champion model's output, then explains the pricing in plain language for an underwriter or regulator."
+                buttonLabel="Explain pricing"
+                body={{ policy_id: p.policy_id }} />
+            </div>
+
             <Card title={`Policy versions (${data.versions?.length || 0})`} className="mb-6">
               <Table
                 columns={[
@@ -840,6 +1026,15 @@
               <InfoBanner icon={Scale} tone="emerald" title="Champion/challenger discipline">
                 Every candidate is trained on the same temporal split and scored on the same 2024 test slice. The factory ranks them by Gini on incurred losses, writes <code>model_comparison</code>, and aliases the winners — so pricing always resolves a specific model version, never a pinned string.
               </InfoBanner>
+            </div>
+
+            <div className="mb-6">
+              <AgentWidget
+                kind="propose_model_plan"
+                title="Propose the next factory run"
+                subtitle="Claude looks at the current champion/challenger board and proposes 3–5 concrete model configurations worth training, with hyperparameters and expected learnings."
+                buttonLabel="Propose plan"
+                body={{ target: "frequency", feature_scope: "all" }} />
             </div>
 
             <Card title="Champion/challenger comparison" className="mb-6"
@@ -930,6 +1125,86 @@
                 ]}
                 rows={data.versions ?? []} />
             </Card>
+          </>
+        );
+      }
+
+      function ModelDevelopment() {
+        const [comparison, setComparison] = useState([]);
+        useEffect(() => { api("models/comparison").then((r) => setComparison(r.rows || [])).catch(() => {}); }, []);
+
+        const notebooks = [
+          { id: "01", name: "Frequency GLM",          path: "src/05_modelling/01_train_frequency_glm.py",
+            desc: "Poisson GLM with log(exposure_fraction) offset. Additive relativities, p-values, deviance — the transparent baseline every regulator expects.",
+            topics: ["statsmodels", "Poisson GLM", "offset", "relativities", "MLflow", "UC registry"] },
+          { id: "02", name: "Severity GLM",           path: "src/05_modelling/02_train_severity_glm.py",
+            desc: "Gamma GLM on mean severity where claims > 0, claim-count-weighted. Coefficients × exponents = cost relativities.",
+            topics: ["statsmodels", "Gamma GLM", "freq_weights", "log link", "relativities"] },
+          { id: "03", name: "Severity GBM (challenger)", path: "src/05_modelling/03_train_severity_gbm.py",
+            desc: "LightGBM Gamma with actuarial monotonicity constraints on 11 features. Same target + split as the GLM for a clean like-for-like.",
+            topics: ["LightGBM", "Gamma objective", "monotone_constraints", "early stopping", "TreeSHAP-ready"] },
+          { id: "04", name: "Demand GBM",             path: "src/05_modelling/04_train_demand_gbm.py",
+            desc: "Binary classifier on converted_flag over 4-year quote stream. Temporal split. Outputs the conversion-probability leg of the pricing engine.",
+            topics: ["LightGBM", "binary", "AUC", "price elasticity", "temporal split"] },
+          { id: "05", name: "Bayesian frequency (PyMC)", path: "src/05_modelling/05_train_frequency_pymc.py",
+            desc: "PyMC hierarchical Poisson with partial pooling on region. Full posterior distributions useful for capital + tail risk. Research artefact, not registered.",
+            topics: ["PyMC", "NUTS", "partial pooling", "posterior", "ArviZ"] },
+          { id: "06", name: "Pure-premium XGBoost",   path: "src/05_modelling/06_train_pure_premium_xgboost.py",
+            desc: "Single-model Tweedie alternative to the compound freq × sev approach. Monotonicity constraints. Tradeoff: higher AIC, less interpretable.",
+            topics: ["XGBoost", "Tweedie", "variance_power=1.5", "monotone_constraints"] },
+          { id: "07", name: "Model factory",          path: "src/05_modelling/07_model_factory.py",
+            desc: "Scores every candidate on the 2024 test slice, writes model_comparison, aliases champions in UC, and emits double-lift charts.",
+            topics: ["champion/challenger", "double-lift", "UC aliases", "model_comparison"] },
+          { id: "08", name: "Regulatory reports",     path: "src/05_modelling/08_generate_model_reports.py",
+            desc: "Per-model markdown bundle with lineage, TreeSHAP, PDPs, calibration, reason codes, protected-attribute audit. Saved to /Volumes/reports/.",
+            topics: ["TreeSHAP", "partial dependence", "calibration", "Gini lift", "reason codes"] },
+          { id: "09", name: "Fairness + robustness",  path: "src/05_modelling/09_fairness_and_robustness.py",
+            desc: "Cross-model audit: protected-attribute absence, directional monotonicity across 9 features, postcode-swap consistency test.",
+            topics: ["fairness", "monotonicity", "same-risk consistency", "cross-slice"] },
+        ];
+
+        return (
+          <>
+            <PageHeader title="Model Development" subtitle="The 9 notebooks that make up the factory. Together they produce the champions aliased in UC and the regulatory reports." />
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+              <InfoBanner icon={FlaskConical} tone="blue" title="Compound vs single-shot pricing">
+                Two schools compete on the leaderboard: <strong>compound</strong> (Freq GLM × Sev GBM) and <strong>single-shot Tweedie</strong> (pure_premium_xgb). The compound approach is easier to defend clause-by-clause; the single-shot sometimes wins on lift but costs more in narrative.
+              </InfoBanner>
+              <InfoBanner icon={TrendingUp} tone="emerald" title="Champion/challenger, test-set Gini">
+                Current leaderboard from <code>model_comparison</code>:
+                <div className="mt-2">
+                  <BarChart
+                    data={comparison.slice(0, 5).map((r) => ({
+                      label: r.model?.replace(/ \(.*\)/, "").replace("compound_", ""),
+                      value: Number(Number(r.gini_on_incurred).toFixed(4)),
+                    }))}
+                    color="#10b981" />
+                </div>
+              </InfoBanner>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {notebooks.map((nb) => (
+                <div key={nb.id} className="bg-white rounded-lg border border-slate-200 p-4">
+                  <div className="flex items-start gap-2">
+                    <div className="shrink-0 w-8 h-8 rounded bg-blue-50 text-blue-600 flex items-center justify-center text-xs font-semibold">{nb.id}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-slate-900">{nb.name}</div>
+                      <code className="text-[11px] text-slate-500 break-all">{nb.path}</code>
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-600 mt-2 leading-relaxed">{nb.desc}</p>
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {nb.topics.map((t) => <Badge key={t} tone="slate">{t}</Badge>)}
+                  </div>
+                  <div className="mt-3 text-xs">
+                    <a className="text-blue-600 hover:underline" target="_blank" rel="noreferrer"
+                      href={`https://github.com/wryszka/pricing-workbench-v2/blob/main/${nb.path}`}>View on GitHub ↗</a>
+                  </div>
+                </div>
+              ))}
+            </div>
           </>
         );
       }
@@ -1040,15 +1315,35 @@
         );
       }
 
+      function GenieEmbed({ spaceId, host }) {
+        if (!spaceId) {
+          return (
+            <div className="bg-slate-50 border border-slate-200 rounded p-4 text-sm text-slate-600">
+              <div className="font-medium text-slate-800 mb-1">Genie space not configured</div>
+              <p>Set <code>GENIE_SPACE_PRICING</code> (and optionally <code>GENIE_SPACE_QUOTES</code>) in the app's <code>app.yaml</code> to embed a Genie room here. The room is a natural-language query interface over the Unity Catalog schema — useful for ad-hoc analytical questions a dashboard can't answer.</p>
+            </div>
+          );
+        }
+        return (
+          <iframe
+            src={`${host}/genie/rooms/${spaceId}?o=`}
+            className="w-full rounded border border-slate-200"
+            style={{ height: 640 }}
+            title="Genie" />
+        );
+      }
+
       function Governance() {
         const [summary, setSummary] = useState(null);
         const [audit, setAudit] = useState([]);
         const [lineage, setLineage] = useState(null);
+        const [genieInfo, setGenieInfo] = useState({ workspace_host: "", spaces: [] });
         const [tab, setTab] = useState("overview");
         useEffect(() => {
           api("governance").then(setSummary).catch(() => {});
           api("governance/audit?limit=200").then((r) => setAudit(r.events)).catch(() => {});
           api("governance/lineage").then(setLineage).catch(() => {});
+          api("genie/spaces").then(setGenieInfo).catch(() => {});
         }, []);
         const totalEvents   = (summary?.event_counts    || []).reduce((s, r) => s + Number(r.n || 0), 0);
         const approvedCount = (summary?.dataset_approvals || []).find((r) => r.decision === "approved")?.n || 0;
@@ -1073,7 +1368,7 @@
             </div>
 
             <div className="flex gap-1 mb-3 border-b border-slate-200">
-              {["overview", "audit", "fairness", "lineage"].map((t) => (
+              {["overview", "audit", "fairness", "lineage", "genie"].map((t) => (
                 <button key={t} onClick={() => setTab(t)}
                   className={`px-3 py-1.5 text-sm border-b-2 -mb-px capitalize ${
                     tab === t ? "border-blue-600 text-blue-700 font-medium" : "border-transparent text-slate-600 hover:text-slate-900"
@@ -1145,6 +1440,20 @@
                     { key: "detail", label: "Detail" },
                   ]}
                   rows={summary.fairness ?? []} />
+              </Card>
+            )}
+            {tab === "genie" && (
+              <Card title="Ask Genie — natural-language query over the pricing schema"
+                right={<Badge tone="blue">Databricks Genie</Badge>}>
+                <div className="text-sm text-slate-600 mb-4">
+                  Genie answers natural-language questions over <code>feature_policy_year_training</code>,
+                  <code>dim_companies</code>, <code>fact_claims</code>, and the other gold tables. It generates SQL,
+                  runs it against the SQL warehouse, and returns a table or chart. Every query is logged, so
+                  analytical explorations are traceable. Example questions: <em>"Which regions had the worst loss ratio in
+                  2024?"</em>, <em>"How many policies bind through the broker channel vs direct?"</em>, <em>"What's the
+                  average gross premium for Hospitality policies with flood zone rating &gt; 2?"</em>.
+                </div>
+                <GenieEmbed spaceId={genieInfo.spaces?.[0]?.id} host={genieInfo.workspace_host} />
               </Card>
             )}
             {tab === "lineage" && lineage && (
@@ -1303,20 +1612,138 @@
       }
 
       function QuoteReview() {
+        const [quotes, setQuotes] = useState([]);
+        const [selected, setSelected] = useState(null);
+        const [detail, setDetail] = useState(null);
+        const [conv, setConv] = useState(""); // "" | "yes" | "no"
+        useEffect(() => {
+          const q = conv ? `?converted=${conv}` : "";
+          api(`quotes${q}`).then((r) => setQuotes(r.quotes || [])).catch(() => setQuotes([]));
+        }, [conv]);
+        useEffect(() => {
+          if (!selected) return;
+          setDetail(null);
+          api(`quotes/${selected}`).then(setDetail).catch(() => setDetail(null));
+        }, [selected]);
+
         return (
           <>
-            <PageHeader title="Quote Review" subtitle="Per-quote forensic drill-down with model replay and SHAP (bolt-on)." />
-            <Card>
-              <div className="flex items-start gap-4">
-                <div className="p-3 rounded-full bg-indigo-50 text-indigo-600 shrink-0"><Zap size={20} /></div>
-                <div>
-                  <h3 className="font-semibold text-slate-800">Placeholder</h3>
-                  <p className="text-sm text-slate-600 mt-2">
-                    Reads saved quote payloads from the <code className="bg-slate-100 px-1 mx-1 rounded text-xs">saved_payloads</code> volume, rescores against the current champion, and renders per-feature SHAP contributions. UI-only work — backend data is already in place.
-                  </p>
+            <PageHeader title="Quote Review" subtitle="A customer asks: 'why was I charged so much?'. This tab rewinds the quote, shows the rating factors the model saw, and lets an AI analyst explain it." />
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+              <InfoBanner icon={Zap} tone="blue" title="What's on this page">
+                The 250K-row <code>feature_quote_training</code> stream is the working memory of every quote we've priced. Pick one on the left to see its rating factors, whether it converted, and which underlying policy it became.
+              </InfoBanner>
+              <InfoBanner icon={Sparkles} tone="emerald" title="Agent-assisted explanation">
+                Use the AI Explain widget (below the selected quote) to ask Claude to narrate the pricing in plain language — useful for a live underwriter call where a customer wants a reason.
+              </InfoBanner>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-4">
+              {/* Left: quote list */}
+              <Card title="Recent quotes"
+                right={
+                  <select value={conv} onChange={(e) => setConv(e.target.value)}
+                    className="border border-slate-300 rounded px-2 py-1 text-xs">
+                    <option value="">All</option>
+                    <option value="yes">Converted</option>
+                    <option value="no">Lost</option>
+                  </select>
+                }>
+                <div className="max-h-[600px] overflow-y-auto -mx-4 -my-4">
+                  {quotes.length === 0 ? <div className="p-4 text-xs text-slate-500 italic">Loading…</div> :
+                    <ul className="divide-y divide-slate-100">
+                      {quotes.map((q) => (
+                        <li key={q.quote_id}>
+                          <button onClick={() => setSelected(q.quote_id)}
+                            className={`w-full text-left px-4 py-2 hover:bg-slate-50 ${selected === q.quote_id ? "bg-blue-50 border-l-2 border-blue-600" : ""}`}>
+                            <div className="flex items-center justify-between text-xs">
+                              <code className="text-blue-700">{q.quote_id}</code>
+                              <Badge tone={q.converted_flag ? "green" : "slate"}>{q.converted_flag ? "bound" : "lost"}</Badge>
+                            </div>
+                            <div className="text-[11px] text-slate-500 mt-0.5">
+                              {q.quote_date} · {q.region} · {q.construction_type}
+                            </div>
+                            <div className="text-[11px] text-slate-500">
+                              £{fmt(Math.round(q.gross_premium_quoted || 0))} · ratio {Number(q.vs_market_rate || 0).toFixed(2)}
+                            </div>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>}
                 </div>
+              </Card>
+
+              {/* Right: quote detail */}
+              <div>
+                {!selected && (
+                  <Card>
+                    <div className="text-sm text-slate-500 italic py-6 text-center">Select a quote on the left to see its rating factors.</div>
+                  </Card>
+                )}
+                {selected && !detail && <Card><div className="text-sm text-slate-500">Loading…</div></Card>}
+                {detail && (
+                  <div className="space-y-4">
+                    <Card>
+                      <div className="flex items-start justify-between gap-3 mb-3">
+                        <div>
+                          <code className="text-blue-700 text-lg font-mono">{detail.quote.quote_id}</code>
+                          <div className="text-xs text-slate-500 mt-1">
+                            {detail.quote.quote_date} · {detail.quote.region} · {detail.quote.construction_type}
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-end gap-1">
+                          <Badge tone={detail.quote.converted_flag ? "green" : "slate"}>
+                            {detail.quote.converted_flag ? "BOUND POLICY" : "NOT BOUND"}
+                          </Badge>
+                          {detail.quote.is_outlier && <Badge tone="amber">outlier</Badge>}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <div><div className="text-[10px] uppercase text-slate-500">Buildings SI</div><div className="font-medium">£{fmt(Math.round(detail.quote.buildings_si || 0))}</div></div>
+                        <div><div className="text-[10px] uppercase text-slate-500">Gross premium</div><div className="font-medium">£{fmt(Math.round(detail.quote.gross_premium_quoted || 0))}</div></div>
+                        <div><div className="text-[10px] uppercase text-slate-500">Market rate</div><div className="font-medium">{Number(detail.quote.market_median_rate || 0).toFixed(2)}</div></div>
+                        <div><div className="text-[10px] uppercase text-slate-500">vs market</div>
+                          <div className={`font-medium ${Number(detail.quote.vs_market_rate) > 1.1 ? "text-red-600" : Number(detail.quote.vs_market_rate) < 0.9 ? "text-emerald-700" : "text-slate-800"}`}>
+                            {Number(detail.quote.vs_market_rate || 0).toFixed(2)}
+                          </div>
+                        </div>
+                        <div><div className="text-[10px] uppercase text-slate-500">Internal risk tier</div><div className="font-medium">{detail.quote.internal_risk_tier}</div></div>
+                        <div><div className="text-[10px] uppercase text-slate-500">Credit tier</div><div className="font-medium">{detail.quote.credit_risk_tier}</div></div>
+                        <div><div className="text-[10px] uppercase text-slate-500">Flood zone</div><div className="font-medium">{detail.quote.flood_zone}</div></div>
+                        <div><div className="text-[10px] uppercase text-slate-500">Channel</div><div className="font-medium">{detail.quote.channel}</div></div>
+                      </div>
+                    </Card>
+
+                    {detail.policy && (
+                      <Card title="Became policy">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <Link to={`/policies/${detail.policy.policy_id}`} className="text-blue-600 hover:underline font-mono text-sm">{detail.policy.policy_id}</Link>
+                            <div className="text-xs text-slate-500 mt-0.5">{detail.policy.company_name} · {detail.policy.region}</div>
+                          </div>
+                          <Badge tone={detail.policy.status === "active" ? "green" : "amber"}>{detail.policy.status}</Badge>
+                        </div>
+                      </Card>
+                    )}
+
+                    <AgentWidget
+                      kind="explain_pricing"
+                      title="AI explanation of this quote's price"
+                      subtitle={`Claude reviews every rating factor the engine saw for ${detail.quote.quote_id} and drafts a one-paragraph underwriter explanation.`}
+                      buttonLabel="Explain"
+                      body={{ quote_id: detail.quote.quote_id }} />
+
+                    <Card title="Rating factors JSON (model input)">
+                      <pre className="text-[11px] bg-slate-50 border border-slate-200 rounded p-3 overflow-auto max-h-64">
+                        {JSON.stringify(detail.quote, null, 2)}
+                      </pre>
+                    </Card>
+                  </div>
+                )}
               </div>
-            </Card>
+            </div>
           </>
         );
       }
@@ -1336,6 +1763,7 @@
                   <Route path="/feature-table/:id"   element={<FeatureTableDetail />} />
                   <Route path="/policies"            element={<Policies />} />
                   <Route path="/policies/:id"        element={<PolicyDetail />} />
+                  <Route path="/development"         element={<ModelDevelopment />} />
                   <Route path="/model-factory"       element={<ModelFactory />} />
                   <Route path="/model-factory/:name" element={<ModelDetail />} />
                   <Route path="/reports"             element={<Reports />} />

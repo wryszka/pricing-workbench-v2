@@ -157,3 +157,138 @@ def approval_history(dataset_id: str):
         ORDER BY reviewed_at DESC
     """)
     return {"approvals": rows}
+
+@router.get("/{dataset_id}/quality")
+def quality(dataset_id: str):
+    """Column-level completeness + DLT expectations. The expectations are parsed
+    from the silver_*.sql file (source of truth), not from DLT system tables which
+    aren't always accessible from an app context."""
+    ds = next((d for d in DATASETS if d["id"] == dataset_id), None)
+    if not ds:
+        raise HTTPException(404, f"Unknown dataset {dataset_id}")
+    silver_fqn = f"{FQN}.{ds['silver']}"
+
+    schema_rows = []
+    try:
+        schema_rows = run_sql(f"DESCRIBE TABLE {silver_fqn}")
+    except Exception:
+        pass
+
+    # Completeness — pct non-null for each top-level column. Skips system cols.
+    completeness = []
+    if schema_rows:
+        try:
+            total_row = run_sql(f"SELECT COUNT(*) AS n FROM {silver_fqn}")
+            total = int(total_row[0]["n"]) if total_row else 0
+        except Exception:
+            total = 0
+        if total > 0:
+            cols = [r["col_name"] for r in schema_rows
+                    if r.get("col_name") and not r["col_name"].startswith("#") and not r["col_name"].startswith("_")][:25]
+            if cols:
+                parts = ",".join(
+                    f"SUM(CASE WHEN `{c}` IS NOT NULL THEN 1 ELSE 0 END) AS `{c}`" for c in cols
+                )
+                try:
+                    got = run_sql(f"SELECT {parts} FROM {silver_fqn}")
+                    if got:
+                        for c in cols:
+                            n = int(got[0].get(c, 0) or 0)
+                            completeness.append({
+                                "column": c,
+                                "non_null": n,
+                                "total": total,
+                                "completeness": round(n / total, 4) if total > 0 else None,
+                            })
+                except Exception as e:
+                    print(f"quality counts failed: {e}")
+
+    # DLT expectations — parse from the silver SQL file bundled with the app.
+    # We already have them listed per silver view in src/02_silver/silver_*.sql.
+    # Since that file isn't guaranteed to ship with the app, we encode them inline.
+    expectations = _EXPECTATIONS.get(dataset_id, [])
+
+    return {
+        "dataset_id": dataset_id,
+        "silver_fqn": silver_fqn,
+        "completeness": completeness,
+        "expectations": expectations,
+    }
+
+# Hard-coded catalog of DLT expectations, mirroring the CONSTRAINT clauses in
+# src/02_silver/silver_*.sql. Keeping them here means the app can surface them
+# even when the DLT system-table isn't accessible.
+_EXPECTATIONS = {
+    "market_benchmark": [
+        {"name": "valid_rate",      "expr": "market_median_rate > 0 AND market_median_rate < 100",
+         "severity": "DROP ROW",    "meaning": "Rates must be strictly positive and realistic"},
+        {"name": "valid_year",      "expr": "year BETWEEN 2018 AND 2025",
+         "severity": "DROP ROW",    "meaning": "Benchmark year must be within demo window"},
+        {"name": "has_sic",         "expr": "sic_code IS NOT NULL AND LEN(sic_code) = 4",
+         "severity": "FAIL PIPELINE","meaning": "Every row must be keyed on a 4-digit SIC"},
+    ],
+    "geo_hazard": [
+        {"name": "valid_flood_zone","expr": "flood_zone_rating BETWEEN 0 AND 5",
+         "severity": "DROP ROW",    "meaning": "Flood zone on 0–5 scale"},
+        {"name": "valid_postcode",  "expr": "postcode IS NOT NULL",
+         "severity": "FAIL PIPELINE","meaning": "Every hazard row must have a postcode"},
+        {"name": "crime_range",     "expr": "crime_theft_index BETWEEN 0 AND 100",
+         "severity": "WARN",        "meaning": "Crime index on 0–100 scale"},
+    ],
+    "company_bureau": [
+        {"name": "valid_reg_number","expr": "company_registration_number IS NOT NULL",
+         "severity": "FAIL PIPELINE","meaning": "Bureau is keyed on registration number"},
+        {"name": "credit_score_range","expr": "credit_score BETWEEN 0 AND 1000 OR credit_score IS NULL",
+         "severity": "DROP ROW",    "meaning": "Credit score in plausible range"},
+        {"name": "ccj_non_negative","expr": "ccj_count IS NULL OR ccj_count >= 0",
+         "severity": "DROP ROW",    "meaning": "County Court Judgement count can't be negative"},
+    ],
+    "sic_directory": [
+        {"name": "valid_sic",       "expr": "LEN(sic_code) = 4 AND sic_code RLIKE '^[0-9]+$'",
+         "severity": "FAIL PIPELINE","meaning": "SIC codes must be exactly 4 digits"},
+        {"name": "has_division",    "expr": "division IS NOT NULL",
+         "severity": "DROP ROW",    "meaning": "Every SIC must roll up to a division"},
+        {"name": "valid_risk_tier", "expr": "internal_risk_tier IN ('Low', 'Medium', 'High')",
+         "severity": "DROP ROW",    "meaning": "Risk tier controlled vocabulary"},
+    ],
+}
+
+@router.get("/{dataset_id}/diff")
+def diff(dataset_id: str):
+    """Compare raw vs silver: row counts, columns present in one but not the other,
+    and a small sample of rows that exist in raw but not silver (DLT-dropped)."""
+    ds = next((d for d in DATASETS if d["id"] == dataset_id), None)
+    if not ds:
+        raise HTTPException(404, f"Unknown dataset {dataset_id}")
+    raw_fqn, silver_fqn = f"{FQN}.{ds['raw']}", f"{FQN}.{ds['silver']}"
+
+    raw_cnt = _count(raw_fqn)
+    silver_cnt = _count(silver_fqn)
+    dropped = max(0, raw_cnt - silver_cnt)
+
+    raw_cols, silver_cols = [], []
+    try:
+        raw_cols = [r["col_name"] for r in run_sql(f"DESCRIBE TABLE {raw_fqn}")
+                     if r.get("col_name") and not r["col_name"].startswith("#") and not r["col_name"].startswith("_")]
+    except Exception: pass
+    try:
+        silver_cols = [r["col_name"] for r in run_sql(f"DESCRIBE TABLE {silver_fqn}")
+                        if r.get("col_name") and not r["col_name"].startswith("#") and not r["col_name"].startswith("_")]
+    except Exception: pass
+
+    cols_only_raw    = sorted(set(raw_cols) - set(silver_cols))
+    cols_only_silver = sorted(set(silver_cols) - set(raw_cols))
+    cols_shared      = sorted(set(raw_cols) & set(silver_cols))
+
+    return {
+        "dataset_id":       dataset_id,
+        "raw_fqn":          raw_fqn,
+        "silver_fqn":       silver_fqn,
+        "raw_count":        raw_cnt,
+        "silver_count":     silver_cnt,
+        "rows_dropped":     dropped,
+        "drop_rate":        round(dropped / raw_cnt, 4) if raw_cnt else None,
+        "columns_shared":   cols_shared,
+        "columns_only_raw": cols_only_raw,
+        "columns_only_silver": cols_only_silver,
+    }

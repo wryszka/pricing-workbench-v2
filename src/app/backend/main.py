@@ -8,7 +8,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 
-from .routers import home, datasets, features, models, reports, governance, policies, serving
+from .routers import (
+    home, datasets, features, models, reports, governance, policies, serving, agent, genie, quotes,
+)
 from . import config
 
 app = FastAPI(title="Pricing Workbench v2", version="2.0.0")
@@ -36,6 +38,9 @@ app.include_router(reports.router,    prefix="/api/reports",    tags=["reports"]
 app.include_router(governance.router, prefix="/api/governance", tags=["governance"])
 app.include_router(policies.router,   prefix="/api/policies",   tags=["policies"])
 app.include_router(serving.router,    prefix="/api/serving",    tags=["serving"])
+app.include_router(agent.router,      prefix="/api/agent",      tags=["agent"])
+app.include_router(genie.router,      prefix="/api/genie",      tags=["genie"])
+app.include_router(quotes.router,     prefix="/api/quotes",     tags=["quotes"])
 
 @app.get("/api/health")
 def health():
