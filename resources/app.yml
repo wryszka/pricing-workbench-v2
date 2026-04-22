@@ -1,0 +1,7 @@
+# Databricks App — FastAPI (port 8000) + buildless React SPA
+resources:
+  apps:
+    pricing_workbench_v2:
+      name: "pricing-workbench-v2"
+      description: "Bricksurance SE pricing workbench v2 — regulator-ready reports, model factory, fairness audit"
+      source_code_path: ${workspace.file_path}/src/app

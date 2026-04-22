@@ -1,13 +1,1044 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pricing Workbench v2 — Bricksurance SE</title>
+
+    <!-- Tailwind via CDN (JIT in-browser, supports arbitrary utility classes). -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: { sidebar: "#1e293b", sidebarAccent: "#334155" },
+          },
+        },
+      };
+    </script>
+    <style>
+      body { font-family: system-ui, -apple-system, sans-serif; font-size: 14px; background: #f8fafc; }
+      .md-report h1 { font-size: 1.5rem; font-weight: 600; color: #0f172a; margin-top: 1.5rem; margin-bottom: 0.75rem; }
+      .md-report h2 { font-size: 1.25rem; font-weight: 600; color: #1e293b; margin-top: 1.5rem; margin-bottom: 0.5rem; }
+      .md-report h3 { font-size: 1rem; font-weight: 600; color: #334155; margin-top: 1rem; margin-bottom: 0.5rem; }
+      .md-report p  { color: #334155; line-height: 1.6; margin: 0.5rem 0; }
+      .md-report ul { list-style: disc; padding-left: 1.5rem; margin: 0.5rem 0; color: #334155; }
+      .md-report li { margin: 0.25rem 0; }
+      .md-report table { width: 100%; border-collapse: collapse; margin: 0.75rem 0; font-size: 0.75rem; }
+      .md-report th { background: #f1f5f9; text-align: left; padding: 0.25rem 0.5rem; border: 1px solid #e2e8f0; font-weight: 500; }
+      .md-report td { padding: 0.25rem 0.5rem; border: 1px solid #e2e8f0; }
+      .md-report code { background: #f1f5f9; padding: 0.125rem 0.25rem; border-radius: 0.25rem; font-family: ui-monospace, Menlo, monospace; font-size: 0.875rem; }
+      .md-report a { color: #2563eb; }
+      .md-report a:hover { text-decoration: underline; }
+      .md-report img { max-width: 100%; border-radius: 0.375rem; border: 1px solid #e2e8f0; margin: 0.75rem 0; background: #fff; }
+      .md-report strong { color: #0f172a; font-weight: 600; }
+    </style>
+
+    <!-- esm.sh pins React + Router + Markdown + Lucide. All buildless. -->
+    <script type="importmap">
+      {
+        "imports": {
+          "react":              "https://esm.sh/react@18.3.1",
+          "react-dom":          "https://esm.sh/react-dom@18.3.1",
+          "react-dom/client":   "https://esm.sh/react-dom@18.3.1/client",
+          "react/jsx-runtime":  "https://esm.sh/react@18.3.1/jsx-runtime",
+          "react-router-dom":   "https://esm.sh/react-router-dom@6.28.0?deps=react@18.3.1,react-dom@18.3.1",
+          "lucide-react":       "https://esm.sh/lucide-react@0.474.0?deps=react@18.3.1",
+          "react-markdown":     "https://esm.sh/react-markdown@9.0.3?deps=react@18.3.1",
+          "remark-gfm":         "https://esm.sh/remark-gfm@4.0.0"
+        }
+      }
+    </script>
+
+    <!-- Babel Standalone: transforms the inline <script type="text/babel"> below so we can
+         write JSX directly. No npm, no bundler. ~110KB, one-time cost. -->
+    <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
   </head>
-  <body class="bg-slate-50">
+  <body>
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+
+    <script type="text/babel" data-type="module" data-presets="react">
+      // -----------------------------------------------------------------
+      // Pricing Workbench v2 — single-file React SPA, buildless via Babel
+      // -----------------------------------------------------------------
+      import React, { useEffect, useState } from "react";
+      import { createRoot } from "react-dom/client";
+      import {
+        HashRouter, Routes, Route, Link, NavLink, useParams,
+      } from "react-router-dom";
+      import ReactMarkdown from "react-markdown";
+      import remarkGfm from "remark-gfm";
+      import {
+        Database, FlaskConical, Boxes, FileText, Rocket, Activity,
+        Shield, Zap, LineChart, BookOpen, ArrowRight, ArrowLeft,
+        ChevronRight, Trophy, CheckCircle2, XCircle, Clock, Download,
+      } from "lucide-react";
+
+      // ---------- fetch wrapper ----------
+      async function api(path, init) {
+        const r = await fetch(path.startsWith("/") ? path : `/api/${path}`, {
+          headers: { "Content-Type": "application/json" }, ...init,
+        });
+        if (!r.ok) throw new Error(`${r.status}: ${await r.text().catch(() => r.statusText)}`);
+        return r.json();
+      }
+      const fmt  = (n) => (n === null || n === undefined) ? "—" : Number(n).toLocaleString();
+      const pct  = (n, d = 1) => (n === null || n === undefined) ? "—" : `${(Number(n) * 100).toFixed(d)}%`;
+
+      // ---------- shared components ----------
+      function Sidebar() {
+        const NAV = [
+          { to: "/",              label: "Home",               icon: LineChart },
+          { to: "/external-data", label: "External Data",      icon: Database },
+          { to: "/feature-table", label: "Feature Table",      icon: Boxes },
+          { to: "/policies",      label: "Policies",           icon: BookOpen },
+          { to: "/model-factory", label: "Model Factory",      icon: FlaskConical },
+          { to: "/reports",       label: "Regulatory Reports", icon: FileText },
+          { to: "/serving",       label: "Serving",            icon: Rocket },
+          { to: "/monitoring",    label: "Monitoring",         icon: Activity },
+          { to: "/governance",    label: "Governance",         icon: Shield },
+          { to: "/quote-review",  label: "Quote Review",       icon: Zap },
+        ];
+        return (
+          <aside className="w-56 shrink-0 bg-sidebar text-slate-200 flex flex-col min-h-screen">
+            <div className="p-4 border-b border-slate-700">
+              <div className="font-semibold text-white">Pricing Workbench</div>
+              <div className="text-xs text-slate-400 mt-0.5">v2 — Bricksurance SE</div>
+            </div>
+            <nav className="flex-1 p-2 space-y-0.5">
+              {NAV.map(({ to, label, icon: Icon }) => (
+                <NavLink key={to} to={to} end={to === "/"}
+                  className={({ isActive }) =>
+                    "flex items-center gap-2 px-3 py-2 rounded text-sm transition " +
+                    (isActive ? "bg-blue-600 text-white" : "hover:bg-sidebarAccent text-slate-300")
+                  }>
+                  <Icon size={16} /><span>{label}</span>
+                </NavLink>
+              ))}
+            </nav>
+            <div className="p-3 border-t border-slate-700 text-[11px] text-slate-500">
+              Actuary-accurate pricing pipeline · regulator-ready reports
+            </div>
+          </aside>
+        );
+      }
+
+      function PageHeader({ title, subtitle, actions }) {
+        return (
+          <div className="mb-6 flex items-start justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-semibold text-slate-900">{title}</h1>
+              {subtitle && <p className="text-slate-600 text-sm mt-1">{subtitle}</p>}
+            </div>
+            {actions && <div className="flex items-center gap-2">{actions}</div>}
+          </div>
+        );
+      }
+
+      function Card({ title, right, children, className = "" }) {
+        return (
+          <div className={`bg-white rounded-lg border border-slate-200 ${className}`}>
+            {(title || right) && (
+              <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between gap-3">
+                {title && <h3 className="font-medium text-slate-800">{title}</h3>}
+                {right}
+              </div>
+            )}
+            <div className="p-4">{children}</div>
+          </div>
+        );
+      }
+
+      function StatNumber({ value, label, hint }) {
+        return (
+          <div>
+            <div className="text-2xl font-semibold text-slate-900">{value}</div>
+            <div className="text-xs uppercase tracking-wide text-slate-500 mt-1">{label}</div>
+            {hint && <div className="text-xs text-slate-400 mt-0.5">{hint}</div>}
+          </div>
+        );
+      }
+
+      function Badge({ children, tone = "slate" }) {
+        const tones = {
+          slate: "bg-slate-100 text-slate-700 border-slate-200",
+          green: "bg-emerald-50 text-emerald-700 border-emerald-200",
+          amber: "bg-amber-50 text-amber-700 border-amber-200",
+          red:   "bg-red-50 text-red-700 border-red-200",
+          blue:  "bg-blue-50 text-blue-700 border-blue-200",
+        };
+        return (
+          <span className={`inline-flex items-center px-2 py-0.5 text-[11px] rounded border ${tones[tone]}`}>
+            {children}
+          </span>
+        );
+      }
+
+      function Table({ columns, rows, empty = "No data" }) {
+        if (!rows || rows.length === 0)
+          return <div className="text-sm text-slate-500 italic py-4">{empty}</div>;
+        return (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-slate-500 text-xs uppercase tracking-wide border-b border-slate-200">
+                  {columns.map((c) => (
+                    <th key={c.key} className={`font-medium py-2 pr-3 ${c.className || ""}`}>{c.label}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {rows.map((row, i) => (
+                  <tr key={i} className="hover:bg-slate-50">
+                    {columns.map((c) => (
+                      <td key={c.key} className={`py-2 pr-3 ${c.className || ""}`}>
+                        {c.render ? c.render(row) : row[c.key]}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      }
+
+      // ---------- pages ----------
+      const PILLAR_META = {
+        ingestion:  { icon: Database,     description: "4 vendor feeds → silver → gold. DLT data-quality gates, approval workflow." },
+        features:   { icon: Boxes,        description: "Policy-year training + quote training + serving-time lookup tables." },
+        modelling:  { icon: FlaskConical, description: "GLM + GBM + XGBoost + PyMC. Champion/challenger in UC model registry." },
+        reports:    { icon: FileText,     description: "Per-model regulatory reports — lineage, SHAP reason codes, fairness audit." },
+        serving:    { icon: Rocket,       description: "Model serving endpoint + online feature store. (Phase 4 — placeholder)" },
+        governance: { icon: Shield,       description: "Audit log, dataset approvals, fairness report, model governance table." },
+      };
+
+      function Home() {
+        const [data, setData] = useState(null);
+        const [err, setErr] = useState(null);
+        useEffect(() => { api("home").then(setData).catch((e) => setErr(String(e))); }, []);
+        if (err) return <div className="text-red-600 text-sm">{err}</div>;
+        if (!data) return <div className="text-slate-500 text-sm">Loading…</div>;
+        const c = data.counts;
+        return (
+          <>
+            <PageHeader title={`${data.entity} — Pricing Workbench`} subtitle={`Unity Catalog: ${data.catalog}`} />
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+              <Card><StatNumber value={fmt(c.dim_companies)} label="Companies" /></Card>
+              <Card><StatNumber value={fmt(c.dim_policies)} label="Policies" hint={`${fmt(c.dim_policy_versions)} versions`} /></Card>
+              <Card><StatNumber value={fmt(c.fact_quotes)} label="Quotes (4-year)" /></Card>
+              <Card><StatNumber value={fmt(c.fact_claims)} label="Claims" /></Card>
+              <Card><StatNumber value={fmt(c.feature_policy_year_training)} label="Training rows (policy-year)" /></Card>
+              <Card><StatNumber value={fmt(c.feature_quote_training)} label="Training rows (quote)" /></Card>
+              <Card><StatNumber value={fmt(c.model_governance)} label="Generated reports" /></Card>
+              <Card><StatNumber value={fmt(c.app_audit_log)} label="Audit events" /></Card>
+            </div>
+            <h2 className="text-lg font-semibold text-slate-800 mb-3">Pillars</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {data.pillars.map((p) => {
+                const meta = PILLAR_META[p.id] || {};
+                const Icon = meta.icon || Shield;
+                return (
+                  <Link key={p.id} to={p.path}
+                    className="block bg-white rounded-lg border border-slate-200 p-5 hover:border-blue-400 hover:shadow-sm transition">
+                    <div className="flex items-start gap-3">
+                      <div className="p-2 rounded bg-blue-50 text-blue-600 shrink-0"><Icon size={18} /></div>
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between">
+                          <div className="font-medium text-slate-900">{p.name}</div>
+                          <ArrowRight size={14} className="text-slate-400" />
+                        </div>
+                        <p className="text-sm text-slate-600 mt-1 leading-relaxed">{meta.description}</p>
+                      </div>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+            <div className="mt-8">
+              <Card title="About this demo">
+                <div className="text-sm text-slate-700 space-y-2">
+                  <p><strong>Bricksurance SE Pricing Workbench v2</strong> is a synthetic commercial-insurance pricing pipeline designed to demonstrate an actuary-accurate data model, a full model factory (GLM + GBM + XGBoost + PyMC), and regulator-ready explainability end-to-end.</p>
+                  <p>Every feature traces back to a source CSV → bronze → DLT silver → feature table → model via Delta versioning + MLflow dataset lineage. Every model gets a markdown report with SHAP reason codes, partial-dependence plots, and a protected-attribute audit.</p>
+                  <p className="text-xs text-slate-500"><Badge tone="amber">synthetic data</Badge> All data is simulated. No real Bricksurance or partner data is used.</p>
+                </div>
+              </Card>
+            </div>
+          </>
+        );
+      }
+
+      function ExternalData() {
+        const [data, setData] = useState(null);
+        const [err, setErr] = useState(null);
+        useEffect(() => { api("datasets").then(setData).catch((e) => setErr(String(e))); }, []);
+        return (
+          <>
+            <PageHeader title="External Data"
+              subtitle="Four vendor feeds arrive as CSVs in the external_landing volume, ingested to raw_* tables, then validated by DLT into silver_* tables." />
+            {err && <div className="text-red-600 text-sm mb-4">{err}</div>}
+            <Card>
+              <Table empty={data ? "No datasets" : "Loading…"}
+                columns={[
+                  { key: "name", label: "Dataset", render: (r) => (
+                    <Link to={`/external-data/${r.id}`} className="text-blue-600 hover:underline font-medium flex items-center gap-1">
+                      {r.name} <ChevronRight size={14} />
+                    </Link>
+                  ) },
+                  { key: "description", label: "Description" },
+                  { key: "owner", label: "Owner" },
+                  { key: "raw_count",    label: "Raw rows",    render: (r) => fmt(r.raw_count) },
+                  { key: "silver_count", label: "Silver rows", render: (r) => fmt(r.silver_count) },
+                  { key: "dropped",      label: "DQ drops",    render: (r) => fmt(Math.max(0, r.raw_count - r.silver_count)) },
+                ]}
+                rows={data?.datasets ?? []} />
+            </Card>
+          </>
+        );
+      }
+
+      function DatasetDetail() {
+        const { id } = useParams();
+        const [data, setData] = useState(null);
+        const [approvals, setApprovals] = useState([]);
+        const [tab, setTab] = useState("schema");
+        const [reviewer, setReviewer] = useState("actuary.demo");
+        const [notes, setNotes] = useState("");
+        const [flash, setFlash] = useState(null);
+        const [err, setErr] = useState(null);
+        const reload = () => {
+          api(`datasets/${id}`).then(setData).catch((e) => setErr(String(e)));
+          api(`datasets/${id}/approvals`).then((r) => setApprovals(r.approvals)).catch(() => {});
+        };
+        useEffect(reload, [id]);
+
+        async function submitDecision(decision) {
+          try {
+            await api(`datasets/${id}/approve`, { method: "POST", body: JSON.stringify({ decision, reviewer, notes }) });
+            setFlash(`Recorded ${decision}`);
+            setNotes("");
+            setTimeout(() => setFlash(null), 3000);
+            reload();
+          } catch (e) { setErr(String(e)); }
+        }
+
+        if (err)  return <div className="text-red-600 text-sm">{err}</div>;
+        if (!data) return <div className="text-slate-500 text-sm">Loading…</div>;
+        return (
+          <>
+            <Link to="/external-data" className="text-sm text-slate-600 hover:underline flex items-center gap-1 mb-3">
+              <ArrowLeft size={14} /> Back to datasets
+            </Link>
+            <PageHeader title={data.name} subtitle={data.description} />
+            <div className="grid grid-cols-4 gap-4 mb-6">
+              <Card><StatNumber value={fmt(data.raw_count)} label="Raw rows" hint={data.raw_fqn} /></Card>
+              <Card><StatNumber value={fmt(data.silver_count)} label="Silver rows" hint={data.silver_fqn} /></Card>
+              <Card><StatNumber value={fmt(data.rows_dropped_by_dq)} label="Dropped by DQ" /></Card>
+              <Card><StatNumber value={pct(data.dq_pass_rate, 2)} label="DQ pass rate" /></Card>
+            </div>
+            {flash && <div className="mb-4 p-3 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded text-sm">{flash}</div>}
+            <Card title="Actuary approval" className="mb-6">
+              <div className="text-sm text-slate-600 mb-3">
+                Record a review decision on the <strong>current Delta snapshot</strong> (raw v{data.raw_count} rows). Both the decision and an audit-log entry will be written.
+              </div>
+              <div className="flex flex-wrap items-end gap-3">
+                <div>
+                  <label className="text-xs text-slate-500 block">Reviewer</label>
+                  <input value={reviewer} onChange={(e) => setReviewer(e.target.value)}
+                    className="border border-slate-300 rounded px-2 py-1 text-sm w-48" />
+                </div>
+                <div className="flex-1 min-w-64">
+                  <label className="text-xs text-slate-500 block">Notes</label>
+                  <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional notes"
+                    className="border border-slate-300 rounded px-2 py-1 text-sm w-full" />
+                </div>
+                <button onClick={() => submitDecision("approved")}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded text-sm flex items-center gap-1">
+                  <CheckCircle2 size={14} /> Approve
+                </button>
+                <button onClick={() => submitDecision("rejected")}
+                  className="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded text-sm flex items-center gap-1">
+                  <XCircle size={14} /> Reject
+                </button>
+              </div>
+            </Card>
+            <div className="flex gap-1 mb-3 border-b border-slate-200">
+              {["schema", "sample", "approvals"].map((t) => (
+                <button key={t} onClick={() => setTab(t)}
+                  className={`px-3 py-1.5 text-sm border-b-2 -mb-px ${
+                    tab === t ? "border-blue-600 text-blue-700 font-medium" : "border-transparent text-slate-600 hover:text-slate-900"
+                  }`}>
+                  {t === "schema" ? "Silver schema" : t === "sample" ? "Sample rows" : `Approvals (${approvals.length})`}
+                </button>
+              ))}
+            </div>
+            <Card>
+              {tab === "schema" && (
+                <Table
+                  columns={[
+                    { key: "col_name",  label: "Column" },
+                    { key: "data_type", label: "Type" },
+                    { key: "comment",   label: "Comment" },
+                  ]}
+                  rows={data.silver_schema} />
+              )}
+              {tab === "sample" && (
+                data.silver_sample?.length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <table className="text-xs">
+                      <thead><tr>{Object.keys(data.silver_sample[0]).map((k) => (
+                        <th key={k} className="text-left bg-slate-100 px-2 py-1 border border-slate-200 font-medium whitespace-nowrap">{k}</th>
+                      ))}</tr></thead>
+                      <tbody>{data.silver_sample.map((row, i) => (
+                        <tr key={i}>{Object.values(row).map((v, j) => (
+                          <td key={j} className="px-2 py-1 border border-slate-200 whitespace-nowrap">{v === null ? "—" : String(v)}</td>
+                        ))}</tr>
+                      ))}</tbody>
+                    </table>
+                  </div>
+                ) : <div className="text-sm text-slate-500 italic">No rows</div>
+              )}
+              {tab === "approvals" && (
+                <Table empty="No approvals yet"
+                  columns={[
+                    { key: "decision", label: "Decision", render: (r) => (
+                      <Badge tone={r.decision === "approved" ? "green" : "red"}>{r.decision}</Badge>
+                    ) },
+                    { key: "reviewer",      label: "Reviewer" },
+                    { key: "reviewer_notes",label: "Notes" },
+                    { key: "raw_row_count", label: "Raw rows" },
+                    { key: "silver_row_count", label: "Silver rows" },
+                    { key: "reviewed_at",   label: "At" },
+                  ]}
+                  rows={approvals} />
+              )}
+            </Card>
+          </>
+        );
+      }
+
+      function FeatureTable() {
+        const [fts, setFts] = useState([]);
+        const [catalog, setCatalog] = useState([]);
+        useEffect(() => {
+          api("features").then((r) => setFts(r.feature_tables)).catch(() => {});
+          api("features/catalog").then((r) => setCatalog(r.features)).catch(() => {});
+        }, []);
+        return (
+          <>
+            <PageHeader title="Feature Tables"
+              subtitle="Point-in-time joins live here. These are the tables every model consumes — versioned in Delta, tracked in MLflow." />
+            <div className="space-y-4 mb-8">
+              {fts.map((ft) => (
+                <Link key={ft.id} to={`/feature-table/${ft.id}`}
+                  className="block bg-white rounded-lg border border-slate-200 p-5 hover:border-blue-400 hover:shadow-sm transition">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <code className="text-blue-700 font-medium">{ft.fqn}</code>
+                        {ft.delta_version !== null && <Badge tone="blue">Delta v{ft.delta_version}</Badge>}
+                      </div>
+                      <div className="text-xs text-slate-500 mt-0.5">Grain: {ft.grain}</div>
+                      <p className="text-sm text-slate-700 mt-2">{ft.description}</p>
+                      <div className="text-xs text-slate-500 mt-2 flex gap-1 flex-wrap items-center">
+                        Used by:{" "}{ft.used_by.map((u) => <Badge key={u} tone="slate">{u}</Badge>)}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-2xl font-semibold text-slate-900">{fmt(ft.row_count)}</div>
+                      <div className="text-xs text-slate-500 uppercase tracking-wide">rows</div>
+                      <ChevronRight size={14} className="text-slate-400 mt-1 inline" />
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+            <Card title={`Feature catalog (${catalog.length} features)`}>
+              <Table empty="Loading…"
+                columns={[
+                  { key: "feature_name",   label: "Feature", className: "font-medium" },
+                  { key: "feature_group",  label: "Group", render: (r) => <Badge tone="slate">{r.feature_group}</Badge> },
+                  { key: "source_tables",  label: "Source", render: (r) => Array.isArray(r.source_tables) ? r.source_tables.join(", ") : r.source_tables },
+                  { key: "transformation", label: "Transformation" },
+                  { key: "owner",          label: "Owner" },
+                  { key: "regulatory_sensitive", label: "Sensitive", render: (r) => r.regulatory_sensitive ? <Badge tone="amber">yes</Badge> : "" },
+                  { key: "pii",            label: "PII", render: (r) => r.pii ? <Badge tone="red">PII</Badge> : "" },
+                ]}
+                rows={catalog} />
+            </Card>
+          </>
+        );
+      }
+
+      function FeatureTableDetail() {
+        const { id } = useParams();
+        const [data, setData] = useState(null);
+        const [tab, setTab] = useState("schema");
+        useEffect(() => { api(`features/${id}`).then(setData).catch(() => {}); }, [id]);
+        if (!data) return <div className="text-slate-500 text-sm">Loading…</div>;
+        return (
+          <>
+            <Link to="/feature-table" className="text-sm text-slate-600 hover:underline flex items-center gap-1 mb-3">
+              <ArrowLeft size={14} /> Back to feature tables
+            </Link>
+            <PageHeader title={data.fqn} />
+            <div className="flex gap-1 mb-3 border-b border-slate-200">
+              {["schema", "sample", "history"].map((t) => (
+                <button key={t} onClick={() => setTab(t)}
+                  className={`px-3 py-1.5 text-sm border-b-2 -mb-px ${
+                    tab === t ? "border-blue-600 text-blue-700 font-medium" : "border-transparent text-slate-600 hover:text-slate-900"
+                  }`}>
+                  {t === "schema" ? `Schema (${data.schema?.length || 0})` : t === "sample" ? `Sample (${data.sample?.length || 0})` : `Delta history (${data.history?.length || 0})`}
+                </button>
+              ))}
+            </div>
+            <Card>
+              {tab === "schema" && (
+                <Table
+                  columns={[
+                    { key: "col_name", label: "Column" },
+                    { key: "data_type", label: "Type" },
+                    { key: "comment", label: "Comment" },
+                  ]}
+                  rows={data.schema ?? []} />
+              )}
+              {tab === "sample" && (data.sample?.length > 0 ? (
+                <div className="overflow-x-auto max-h-[600px]">
+                  <table className="text-xs">
+                    <thead className="sticky top-0 bg-white z-10">
+                      <tr>{Object.keys(data.sample[0]).map((k) => (
+                        <th key={k} className="text-left bg-slate-100 px-2 py-1 border border-slate-200 font-medium whitespace-nowrap">{k}</th>
+                      ))}</tr>
+                    </thead>
+                    <tbody>{data.sample.map((row, i) => (
+                      <tr key={i}>{Object.values(row).map((v, j) => (
+                        <td key={j} className="px-2 py-1 border border-slate-200 whitespace-nowrap max-w-xs truncate">{v === null ? "—" : String(v)}</td>
+                      ))}</tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+              ) : <div className="text-sm text-slate-500 italic">No rows</div>)}
+              {tab === "history" && (
+                <Table
+                  columns={[
+                    { key: "version",   label: "Version", render: (r) => <Badge tone="blue">v{r.version}</Badge> },
+                    { key: "timestamp", label: "Committed" },
+                    { key: "operation", label: "Operation" },
+                    { key: "userName",  label: "User" },
+                  ]}
+                  rows={data.history ?? []} />
+              )}
+            </Card>
+          </>
+        );
+      }
+
+      function Policies() {
+        const [rows, setRows] = useState([]);
+        const [status, setStatus] = useState("");
+        useEffect(() => {
+          const q = status ? `?status=${status}` : "";
+          api(`policies${q}`).then((r) => setRows(r.policies)).catch(() => setRows([]));
+        }, [status]);
+        return (
+          <>
+            <PageHeader title="Policies" subtitle="One row per policy_id with its version count and company."
+              actions={
+                <select value={status} onChange={(e) => setStatus(e.target.value)}
+                  className="border border-slate-300 rounded px-2 py-1 text-sm">
+                  <option value="">All statuses</option>
+                  <option value="active">Active</option>
+                  <option value="lapsed">Lapsed</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+              } />
+            <Card>
+              <Table empty="Loading…"
+                columns={[
+                  { key: "policy_id", label: "Policy ID", render: (r) => (
+                    <Link to={`/policies/${r.policy_id}`} className="text-blue-600 hover:underline font-mono text-xs">{r.policy_id}</Link>
+                  ) },
+                  { key: "company_name",     label: "Company" },
+                  { key: "region",           label: "Region" },
+                  { key: "primary_sic_code", label: "SIC" },
+                  { key: "status", label: "Status", render: (r) => (
+                    <Badge tone={r.status === "active" ? "green" : r.status === "lapsed" ? "amber" : "red"}>{r.status}</Badge>
+                  ) },
+                  { key: "inception_date", label: "Inception" },
+                  { key: "version_count",  label: "Versions" },
+                ]}
+                rows={rows} />
+            </Card>
+          </>
+        );
+      }
+
+      function PolicyDetail() {
+        const { id } = useParams();
+        const [data, setData] = useState(null);
+        useEffect(() => { api(`policies/${id}`).then(setData).catch(() => {}); }, [id]);
+        if (!data) return <div className="text-slate-500 text-sm">Loading…</div>;
+        const p = data.policy;
+        return (
+          <>
+            <Link to="/policies" className="text-sm text-slate-600 hover:underline flex items-center gap-1 mb-3">
+              <ArrowLeft size={14} /> Back to policies
+            </Link>
+            <PageHeader title={p.policy_id} subtitle={p.company_name} />
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+              <Card><div className="text-xs text-slate-500 uppercase">Status</div><Badge tone={p.status === "active" ? "green" : "amber"}>{p.status}</Badge></Card>
+              <Card><div className="text-xs text-slate-500 uppercase">Region</div><div>{p.region}</div></Card>
+              <Card><div className="text-xs text-slate-500 uppercase">SIC</div><div className="font-mono text-sm">{p.primary_sic_code}</div></Card>
+              <Card><div className="text-xs text-slate-500 uppercase">Inception</div><div className="text-sm">{p.inception_date}</div></Card>
+            </div>
+            <Card title={`Policy versions (${data.versions?.length || 0})`} className="mb-6">
+              <Table
+                columns={[
+                  { key: "policy_version", label: "Version", render: (r) => <Badge tone="blue">v{r.policy_version}</Badge> },
+                  { key: "effective_from", label: "From" },
+                  { key: "effective_to",   label: "To" },
+                  { key: "sum_insured",    label: "Sum insured" },
+                  { key: "gross_premium",  label: "Premium" },
+                  { key: "construction_type", label: "Construction" },
+                  { key: "channel",        label: "Channel" },
+                ]}
+                rows={data.versions ?? []} />
+            </Card>
+            <Card title={`Claims (${data.claims?.length || 0})`}>
+              <Table empty="No claims on this policy"
+                columns={[
+                  { key: "claim_id", label: "Claim ID", className: "font-mono text-xs" },
+                  { key: "policy_version", label: "On ver" },
+                  { key: "loss_date", label: "Loss date" },
+                  { key: "peril", label: "Peril", render: (r) => <Badge tone="slate">{r.peril}</Badge> },
+                  { key: "status", label: "Status" },
+                  { key: "incurred_amount", label: "Incurred" },
+                  { key: "paid_amount", label: "Paid" },
+                ]}
+                rows={data.claims ?? []} />
+            </Card>
+          </>
+        );
+      }
+
+      function ModelFactory() {
+        const [models, setModels] = useState([]);
+        const [comparison, setComparison] = useState([]);
+        useEffect(() => {
+          api("models").then((r) => setModels(r.models)).catch(() => {});
+          api("models/comparison").then((r) => setComparison(r.rows)).catch(() => {});
+        }, []);
+        return (
+          <>
+            <PageHeader title="Model Factory"
+              subtitle="Every pricing candidate trained against feature_policy_year_training. Champion aliases resolved on UC Model Registry." />
+            <Card title="Champion/challenger comparison" className="mb-6"
+              right={<div className="text-xs text-slate-500">From <code>model_comparison</code> · 2024 test slice</div>}>
+              <Table empty="No comparison data. Run the model_factory task."
+                columns={[
+                  { key: "model", label: "Candidate", className: "font-medium" },
+                  { key: "gini_on_incurred", label: "Gini on incurred", render: (r) => (
+                    <span className="font-mono text-sm">{Number(r.gini_on_incurred).toFixed(4)}</span>
+                  ) },
+                  { key: "rmse", label: "RMSE", render: (r) => fmt(r.rmse) },
+                  { key: "mae",  label: "MAE",  render: (r) => fmt(r.mae) },
+                  { key: "total_ratio", label: "Total ratio", render: (r) => (
+                    <span className={`font-mono text-sm ${
+                      r.total_ratio > 1.1 ? "text-amber-600" : r.total_ratio < 0.9 ? "text-red-600" : "text-slate-700"
+                    }`}>{Number(r.total_ratio).toFixed(4)}</span>
+                  ) },
+                  { key: "_evaluated_at", label: "Evaluated" },
+                ]}
+                rows={comparison} />
+            </Card>
+            <h2 className="text-lg font-semibold text-slate-800 mb-3">Registered models</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {models.map((m) => (
+                <Link to={`/model-factory/${m.name}`} key={m.full_name}
+                  className="block bg-white rounded-lg border border-slate-200 p-4 hover:border-blue-400 hover:shadow-sm transition">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-medium text-slate-900">{m.name}</span>
+                        <Badge tone="blue">v{m.latest_version}</Badge>
+                        {m.aliases.map((a) => (
+                          <Badge key={a.alias} tone="green"><Trophy size={10} className="mr-0.5" /> {a.alias}</Badge>
+                        ))}
+                      </div>
+                      <div className="text-xs text-slate-500 mt-1 truncate">{m.comment || m.full_name}</div>
+                    </div>
+                    <ChevronRight size={14} className="text-slate-400 mt-1" />
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </>
+        );
+      }
+
+      function ModelDetail() {
+        const { name } = useParams();
+        const [data, setData] = useState(null);
+        useEffect(() => { api(`models/${name}`).then(setData).catch(() => {}); }, [name]);
+        if (!data) return <div className="text-slate-500 text-sm">Loading…</div>;
+        const latest = data.versions?.[0]?.version;
+        const reportId = latest ? `${name}_v${latest}` : null;
+        return (
+          <>
+            <Link to="/model-factory" className="text-sm text-slate-600 hover:underline flex items-center gap-1 mb-3">
+              <ArrowLeft size={14} /> Back to model factory
+            </Link>
+            <PageHeader title={data.name} subtitle={data.full_name}
+              actions={reportId && (
+                <Link to={`/reports/${reportId}`} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded text-sm flex items-center gap-1">
+                  <FileText size={14} /> View regulatory report
+                </Link>
+              )} />
+            {data.aliases?.length > 0 && (
+              <Card className="mb-6" title="Champion aliases">
+                <div className="flex gap-2 flex-wrap">
+                  {data.aliases.map((a) => (
+                    <Badge key={a.alias_name} tone="green">
+                      <Trophy size={10} className="mr-0.5" /> {a.alias_name} → v{a.version_num}
+                    </Badge>
+                  ))}
+                </div>
+              </Card>
+            )}
+            <Card title={`Registered versions (${data.versions?.length || 0})`}>
+              <Table
+                columns={[
+                  { key: "version",    label: "Version", render: (r) => <Badge tone="blue">v{r.version}</Badge> },
+                  { key: "status",     label: "Status" },
+                  { key: "created_at", label: "Created" },
+                  { key: "run_id",     label: "MLflow run", render: (r) => (
+                    <code className="text-xs bg-slate-100 px-1 rounded font-mono">{r.run_id?.slice(0, 12)}…</code>
+                  ) },
+                  { key: "report", label: "Report", render: (r) => (
+                    <Link to={`/reports/${name}_v${r.version}`} className="text-blue-600 hover:underline text-xs">Open</Link>
+                  ) },
+                ]}
+                rows={data.versions ?? []} />
+            </Card>
+          </>
+        );
+      }
+
+      function Reports() {
+        const [reports, setReports] = useState([]);
+        const [governance, setGovernance] = useState([]);
+        useEffect(() => {
+          api("reports").then((r) => setReports(r.reports)).catch(() => {});
+          api("reports/governance").then((r) => setGovernance(r.rows)).catch(() => {});
+        }, []);
+        const rows = reports.map((r) => {
+          const gov = governance.find((g) => g.model_name === r.model_name && String(g.version) === String(r.version));
+          return { ...r, ...(gov || {}) };
+        });
+        return (
+          <>
+            <PageHeader title="Regulatory Reports"
+              subtitle="One report per registered model — lineage, SHAP reason codes, PDP plots, fairness audit." />
+            <Card>
+              <Table empty="No reports generated yet."
+                columns={[
+                  { key: "model_name", label: "Model", render: (r) => (
+                    <Link to={`/reports/${r.id}`} className="text-blue-600 hover:underline font-medium flex items-center gap-1">
+                      <FileText size={14} /> {r.model_name || r.id}
+                    </Link>
+                  ) },
+                  { key: "version", label: "Version", render: (r) => <Badge tone="blue">v{r.version}</Badge> },
+                  { key: "alias",   label: "Alias",   render: (r) => r.alias ? <Badge tone="green">{r.alias}</Badge> : "" },
+                  { key: "gini", label: "Gini", render: (r) => (
+                    r.gini !== undefined ? <span className="font-mono text-sm">{Number(r.gini).toFixed(4)}</span> : "—"
+                  ) },
+                  { key: "total_ratio", label: "Total ratio", render: (r) => (
+                    r.total_ratio !== undefined ? <span className="font-mono text-sm">{Number(r.total_ratio).toFixed(4)}</span> : "—"
+                  ) },
+                  { key: "test_rows", label: "Test rows", render: (r) => fmt(r.test_rows) },
+                  { key: "shap_method", label: "Explanation", render: (r) => (
+                    r.shap_method ? <span className="text-xs text-slate-600">{r.shap_method.split(" ")[0]}</span> : ""
+                  ) },
+                ]}
+                rows={rows} />
+            </Card>
+          </>
+        );
+      }
+
+      function ReportDetail() {
+        const { id } = useParams();
+        const [markdown, setMarkdown] = useState(null);
+        const [files, setFiles] = useState({ plots: [], tables: [] });
+        useEffect(() => {
+          if (!id) return;
+          api(`reports/${encodeURIComponent(id)}`).then((r) => setMarkdown(r.markdown)).catch(() => {});
+          api(`reports/${encodeURIComponent(id)}/files`).then((r) => setFiles(r.files)).catch(() => {});
+        }, [id]);
+        if (!markdown) return <div className="text-slate-500 text-sm">Loading…</div>;
+        const rewritten = markdown.replace(/!\[([^\]]*)\]\(plots\/([^)]+)\)/g,
+          (_, alt, name) => `![${alt}](/api/reports/${encodeURIComponent(id)}/plot/${encodeURIComponent(name)})`);
+        return (
+          <>
+            <Link to="/reports" className="text-sm text-slate-600 hover:underline flex items-center gap-1 mb-3">
+              <ArrowLeft size={14} /> Back to reports
+            </Link>
+            <PageHeader title={id}
+              actions={
+                <a href={`/api/reports/${encodeURIComponent(id)}`} target="_blank" rel="noreferrer"
+                  className="border border-slate-300 px-3 py-1.5 rounded text-sm flex items-center gap-1 hover:bg-slate-50">
+                  <Download size={14} /> Raw markdown
+                </a>
+              } />
+            <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-6">
+              <Card>
+                <div className="md-report">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{rewritten}</ReactMarkdown>
+                </div>
+              </Card>
+              <aside className="space-y-4">
+                <Card title={`Plots (${files.plots.length})`}>
+                  {files.plots.length === 0 ? <div className="text-xs text-slate-500 italic">None</div> : (
+                    <ul className="space-y-1">{files.plots.map((p) => (
+                      <li key={p}><a href={`/api/reports/${encodeURIComponent(id)}/plot/${encodeURIComponent(p)}`} target="_blank" rel="noreferrer" className="text-xs text-blue-600 hover:underline">{p}</a></li>
+                    ))}</ul>
+                  )}
+                </Card>
+                <Card title={`Tables (${files.tables.length})`}>
+                  {files.tables.length === 0 ? <div className="text-xs text-slate-500 italic">None</div> : (
+                    <ul className="space-y-1">{files.tables.map((p) => (
+                      <li key={p}><a href={`/api/reports/${encodeURIComponent(id)}/table/${encodeURIComponent(p)}`} target="_blank" rel="noreferrer" className="text-xs text-blue-600 hover:underline">{p}</a></li>
+                    ))}</ul>
+                  )}
+                </Card>
+              </aside>
+            </div>
+          </>
+        );
+      }
+
+      function Governance() {
+        const [summary, setSummary] = useState(null);
+        const [audit, setAudit] = useState([]);
+        const [lineage, setLineage] = useState(null);
+        const [tab, setTab] = useState("overview");
+        useEffect(() => {
+          api("governance").then(setSummary).catch(() => {});
+          api("governance/audit?limit=200").then((r) => setAudit(r.events)).catch(() => {});
+          api("governance/lineage").then(setLineage).catch(() => {});
+        }, []);
+        return (
+          <>
+            <PageHeader title="Governance" subtitle="Audit log, dataset approvals, fairness report, data lineage." />
+            <div className="flex gap-1 mb-3 border-b border-slate-200">
+              {["overview", "audit", "fairness", "lineage"].map((t) => (
+                <button key={t} onClick={() => setTab(t)}
+                  className={`px-3 py-1.5 text-sm border-b-2 -mb-px capitalize ${
+                    tab === t ? "border-blue-600 text-blue-700 font-medium" : "border-transparent text-slate-600 hover:text-slate-900"
+                  }`}>{t}</button>
+              ))}
+            </div>
+            {tab === "overview" && summary && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <Card title="Event counts">
+                  <Table
+                    columns={[
+                      { key: "event_type", label: "Event" },
+                      { key: "n", label: "Count" },
+                      { key: "latest", label: "Latest" },
+                    ]}
+                    rows={summary.event_counts ?? []} />
+                </Card>
+                <Card title="Dataset approvals">
+                  <Table
+                    columns={[
+                      { key: "decision", label: "Decision", render: (r) => (
+                        <Badge tone={r.decision === "approved" ? "green" : "red"}>{r.decision}</Badge>
+                      ) },
+                      { key: "n", label: "Count" },
+                    ]}
+                    rows={summary.dataset_approvals ?? []} />
+                </Card>
+                <Card title="Fairness checks" className="lg:col-span-2">
+                  <Table
+                    columns={[
+                      { key: "check", label: "Check" },
+                      { key: "status", label: "Status", render: (r) => {
+                        if (r.status === "PASS") return <Badge tone="green">PASS</Badge>;
+                        if (r.status === "FAIL") return <Badge tone="red">FAIL</Badge>;
+                        return <Badge tone="slate">{r.status}</Badge>;
+                      } },
+                      { key: "detail", label: "Detail" },
+                    ]}
+                    rows={summary.fairness ?? []} />
+                </Card>
+              </div>
+            )}
+            {tab === "audit" && (
+              <Card title={`Audit log (${audit.length} events)`}>
+                <Table
+                  columns={[
+                    { key: "timestamp", label: "When" },
+                    { key: "event_type", label: "Event", render: (r) => (
+                      <Badge tone={r.event_type?.includes("rejected") ? "red" : r.event_type?.includes("approved") ? "green" : "slate"}>{r.event_type}</Badge>
+                    ) },
+                    { key: "entity_type", label: "Type" },
+                    { key: "entity_id", label: "Entity", className: "font-mono text-xs" },
+                    { key: "user_id", label: "User" },
+                    { key: "source", label: "Source" },
+                  ]}
+                  rows={audit} />
+              </Card>
+            )}
+            {tab === "fairness" && summary && (
+              <Card title="Fairness + robustness audit — from 09_fairness_and_robustness">
+                <Table
+                  columns={[
+                    { key: "check", label: "Check" },
+                    { key: "status", label: "Status", render: (r) => {
+                      if (r.status === "PASS") return <Badge tone="green">PASS</Badge>;
+                      if (r.status === "FAIL") return <Badge tone="red">FAIL</Badge>;
+                      return <Badge tone="slate">{r.status}</Badge>;
+                    } },
+                    { key: "detail", label: "Detail" },
+                  ]}
+                  rows={summary.fairness ?? []} />
+              </Card>
+            )}
+            {tab === "lineage" && lineage && (
+              <div className="grid grid-cols-1 gap-4">
+                {["feature_tables", "silver", "raw"].map((bucket) => (
+                  <Card key={bucket} title={bucket.replace("_", " ")}>
+                    <Table
+                      columns={[
+                        { key: "table", label: "Table", className: "font-mono text-sm" },
+                        { key: "delta_version", label: "Delta version", render: (r) => <Badge tone="blue">v{r.delta_version ?? "?"}</Badge> },
+                        { key: "row_count", label: "Rows" },
+                      ]}
+                      rows={lineage[bucket] ?? []} />
+                  </Card>
+                ))}
+              </div>
+            )}
+          </>
+        );
+      }
+
+      function Serving() {
+        const [data, setData] = useState(null);
+        useEffect(() => { api("serving").then(setData).catch(() => {}); }, []);
+        return (
+          <>
+            <PageHeader title="Serving" subtitle="Model Serving endpoint + online feature store" />
+            <Card>
+              <div className="flex items-start gap-4">
+                <div className="p-3 rounded-full bg-blue-50 text-blue-600 shrink-0"><Rocket size={20} /></div>
+                <div className="flex-1">
+                  <h3 className="font-semibold text-slate-800 flex items-center gap-2"><Clock size={14} /> Phase 4 — placeholder</h3>
+                  <p className="text-sm text-slate-600 mt-2">
+                    {data?.message || "The serving endpoint is planned as a follow-up."}
+                  </p>
+                  {data?.plan?.length > 0 && (
+                    <ul className="list-disc pl-5 mt-3 space-y-1 text-sm text-slate-700">
+                      {data.plan.map((item, i) => <li key={i}>{item}</li>)}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            </Card>
+          </>
+        );
+      }
+
+      function Monitoring() {
+        const [comparison, setComparison] = useState([]);
+        useEffect(() => { api("models/comparison").then((r) => setComparison(r.rows)).catch(() => {}); }, []);
+        return (
+          <>
+            <PageHeader title="Monitoring" subtitle="Live drift + latency dashboards are Phase 4 work. For now, shows latest factory comparison." />
+            <Card>
+              <div className="flex items-start gap-4 mb-4">
+                <div className="p-3 rounded-full bg-amber-50 text-amber-600 shrink-0"><Activity size={20} /></div>
+                <div className="text-sm text-slate-600">
+                  Drift detection (PSI per feature, rolling Gini, endpoint p50/p95 latency) is deferred to Phase 4. Factory test metrics below are the current proxy.
+                </div>
+              </div>
+              <Table empty="No data"
+                columns={[
+                  { key: "model", label: "Candidate", className: "font-medium" },
+                  { key: "gini_on_incurred", label: "Gini", render: (r) => (
+                    <span className="font-mono text-sm">{Number(r.gini_on_incurred).toFixed(4)}</span>
+                  ) },
+                  { key: "rmse", label: "RMSE", render: (r) => fmt(r.rmse) },
+                  { key: "total_ratio", label: "Total ratio", render: (r) => Number(r.total_ratio).toFixed(4) },
+                  { key: "_evaluated_at", label: "At" },
+                  { key: "status", label: "Status", render: (r) => {
+                    const tr = Number(r.total_ratio);
+                    if (Math.abs(tr - 1) < 0.05) return <Badge tone="green">healthy</Badge>;
+                    if (Math.abs(tr - 1) < 0.1) return <Badge tone="amber">drift</Badge>;
+                    return <Badge tone="red">miscalibrated</Badge>;
+                  } },
+                ]}
+                rows={comparison} />
+            </Card>
+          </>
+        );
+      }
+
+      function QuoteReview() {
+        return (
+          <>
+            <PageHeader title="Quote Review" subtitle="Per-quote forensic drill-down with model replay and SHAP (bolt-on)." />
+            <Card>
+              <div className="flex items-start gap-4">
+                <div className="p-3 rounded-full bg-indigo-50 text-indigo-600 shrink-0"><Zap size={20} /></div>
+                <div>
+                  <h3 className="font-semibold text-slate-800">Placeholder</h3>
+                  <p className="text-sm text-slate-600 mt-2">
+                    Reads saved quote payloads from the <code className="bg-slate-100 px-1 mx-1 rounded text-xs">saved_payloads</code> volume, rescores against the current champion, and renders per-feature SHAP contributions. UI-only work — backend data is already in place.
+                  </p>
+                </div>
+              </div>
+            </Card>
+          </>
+        );
+      }
+
+      // ---------- app shell ----------
+      function App() {
+        return (
+          <div className="flex min-h-screen">
+            <Sidebar />
+            <main className="flex-1 overflow-x-hidden">
+              <div className="max-w-7xl mx-auto px-6 py-8">
+                <Routes>
+                  <Route path="/"                    element={<Home />} />
+                  <Route path="/external-data"       element={<ExternalData />} />
+                  <Route path="/external-data/:id"   element={<DatasetDetail />} />
+                  <Route path="/feature-table"       element={<FeatureTable />} />
+                  <Route path="/feature-table/:id"   element={<FeatureTableDetail />} />
+                  <Route path="/policies"            element={<Policies />} />
+                  <Route path="/policies/:id"        element={<PolicyDetail />} />
+                  <Route path="/model-factory"       element={<ModelFactory />} />
+                  <Route path="/model-factory/:name" element={<ModelDetail />} />
+                  <Route path="/reports"             element={<Reports />} />
+                  <Route path="/reports/:id"         element={<ReportDetail />} />
+                  <Route path="/serving"             element={<Serving />} />
+                  <Route path="/monitoring"          element={<Monitoring />} />
+                  <Route path="/governance"          element={<Governance />} />
+                  <Route path="/quote-review"        element={<QuoteReview />} />
+                </Routes>
+              </div>
+            </main>
+          </div>
+        );
+      }
+
+      createRoot(document.getElementById("root")).render(
+        <HashRouter>
+          <App />
+        </HashRouter>
+      );
+    </script>
   </body>
 </html>

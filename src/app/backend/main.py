@@ -47,28 +47,29 @@ def health():
     }
 
 # ---------- static frontend ----------
-# During `vite build`, the frontend emits to src/app/frontend/dist. In production
-# (Databricks Apps) we mount that directory at /. During local dev, frontend runs
-# via `npm run dev` on port 5173 and calls the backend at /api/*.
-_frontend_dist = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+# Buildless SPA: frontend/index.html pulls React + Tailwind + Lucide from CDN via
+# import maps, and Babel Standalone transforms JSX in the browser. No npm, no dist.
+# Everything ships as source and runs directly in Databricks Apps.
+_frontend_dir = Path(__file__).resolve().parent.parent / "frontend"
 
-if _frontend_dist.exists():
-    app.mount("/assets", StaticFiles(directory=_frontend_dist / "assets"), name="assets")
+if _frontend_dir.exists():
+    if (_frontend_dir / "public").exists():
+        app.mount("/public", StaticFiles(directory=_frontend_dir / "public"), name="public")
 
     @app.get("/{full_path:path}")
     async def spa(full_path: str):
-        # Return index.html for any non-api route so react-router handles the URL
+        # Non-API paths fall back to index.html so HashRouter handles the URL
         if full_path.startswith("api/"):
             return JSONResponse(status_code=404, content={"error": "not found"})
-        file = _frontend_dist / full_path
+        file = _frontend_dir / full_path
         if file.is_file():
             return FileResponse(file)
-        return FileResponse(_frontend_dist / "index.html")
+        return FileResponse(_frontend_dir / "index.html")
 else:
     @app.get("/")
     def root():
         return {
             "status": "ok",
-            "message": "Frontend not built. Run `npm run build` in src/app/frontend/.",
+            "message": "Frontend directory missing",
             "api_docs": "/docs",
         }
