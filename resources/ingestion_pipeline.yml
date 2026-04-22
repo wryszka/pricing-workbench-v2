@@ -1,0 +1,81 @@
+# Bronze ingestion + silver DLT — the 4 vendor-feed pipeline
+resources:
+  pipelines:
+    silver_reference_data:
+      name: "v2 — Silver Reference Data (DLT)"
+      catalog: ${var.catalog_name}
+      target: ${var.schema_name}
+      channel: CURRENT
+      serverless: true
+      libraries:
+        - notebook:
+            path: ../src/02_silver/silver_market_benchmark.sql
+        - notebook:
+            path: ../src/02_silver/silver_geo_hazard.sql
+        - notebook:
+            path: ../src/02_silver/silver_company_bureau.sql
+        - notebook:
+            path: ../src/02_silver/silver_sic_directory.sql
+
+  jobs:
+    ingest_external_data:
+      name: "v2 — Ingest External Data (bronze → silver)"
+      parameters:
+        - name: catalog_name
+          default: ${var.catalog_name}
+        - name: schema_name
+          default: ${var.schema_name}
+        - name: volume_name
+          default: ${var.volume_name}
+
+      tasks:
+        - task_key: ingest_market_benchmark
+          notebook_task:
+            notebook_path: ../src/01_ingestion/ingest_market_benchmark.py
+            base_parameters:
+              catalog_name: ${var.catalog_name}
+              schema_name: ${var.schema_name}
+              volume_name: ${var.volume_name}
+          environment_key: default
+
+        - task_key: ingest_geo_hazard
+          notebook_task:
+            notebook_path: ../src/01_ingestion/ingest_geo_hazard.py
+            base_parameters:
+              catalog_name: ${var.catalog_name}
+              schema_name: ${var.schema_name}
+              volume_name: ${var.volume_name}
+          environment_key: default
+
+        - task_key: ingest_company_bureau
+          notebook_task:
+            notebook_path: ../src/01_ingestion/ingest_company_bureau.py
+            base_parameters:
+              catalog_name: ${var.catalog_name}
+              schema_name: ${var.schema_name}
+              volume_name: ${var.volume_name}
+          environment_key: default
+
+        - task_key: ingest_sic_directory
+          notebook_task:
+            notebook_path: ../src/01_ingestion/ingest_sic_directory.py
+            base_parameters:
+              catalog_name: ${var.catalog_name}
+              schema_name: ${var.schema_name}
+              volume_name: ${var.volume_name}
+          environment_key: default
+
+        - task_key: build_silver
+          depends_on:
+            - task_key: ingest_market_benchmark
+            - task_key: ingest_geo_hazard
+            - task_key: ingest_company_bureau
+            - task_key: ingest_sic_directory
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.silver_reference_data.id}
+            full_refresh: true
+
+      environments:
+        - environment_key: default
+          spec:
+            client: "5"

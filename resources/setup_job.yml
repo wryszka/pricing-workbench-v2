@@ -1,0 +1,41 @@
+# One-time setup — creates schema, volumes, app tables, generates reference CSVs
+resources:
+  jobs:
+    setup_demo:
+      name: "v2 — Setup (schema, volumes, reference CSVs)"
+      parameters:
+        - name: catalog_name
+          default: ${var.catalog_name}
+        - name: schema_name
+          default: ${var.schema_name}
+        - name: volume_name
+          default: ${var.volume_name}
+        - name: scale_factor
+          default: "1"
+
+      tasks:
+        - task_key: setup
+          notebook_task:
+            notebook_path: ../src/00_setup/setup.py
+            base_parameters:
+              catalog_name: ${var.catalog_name}
+              schema_name: ${var.schema_name}
+              volume_name: ${var.volume_name}
+          environment_key: default
+
+        - task_key: generate_reference_data
+          depends_on:
+            - task_key: setup
+          notebook_task:
+            notebook_path: ../src/00_setup/generate_reference_data.py
+            base_parameters:
+              catalog_name: ${var.catalog_name}
+              schema_name: ${var.schema_name}
+              volume_name: ${var.volume_name}
+              scale_factor: "1"
+          environment_key: default
+
+      environments:
+        - environment_key: default
+          spec:
+            client: "5"

@@ -1,0 +1,67 @@
+# Feature engineering — the point-in-time joins that produce the training table
+resources:
+  jobs:
+    build_features:
+      name: "v2 — Build Feature Tables"
+      parameters:
+        - name: catalog_name
+          default: ${var.catalog_name}
+        - name: schema_name
+          default: ${var.schema_name}
+
+      tasks:
+        - task_key: build_feature_policy_year
+          notebook_task:
+            notebook_path: ../src/04_features/build_feature_policy_year.py
+            base_parameters:
+              catalog_name: ${var.catalog_name}
+              schema_name: ${var.schema_name}
+          environment_key: default
+
+        - task_key: build_feature_quote_training
+          depends_on:
+            - task_key: build_feature_policy_year
+          notebook_task:
+            notebook_path: ../src/04_features/build_feature_quote_training.py
+            base_parameters:
+              catalog_name: ${var.catalog_name}
+              schema_name: ${var.schema_name}
+          environment_key: default
+
+        - task_key: build_feature_policy_current
+          depends_on:
+            - task_key: build_feature_policy_year
+          notebook_task:
+            notebook_path: ../src/04_features/build_feature_policy_current.py
+            base_parameters:
+              catalog_name: ${var.catalog_name}
+              schema_name: ${var.schema_name}
+          environment_key: default
+
+        - task_key: build_feature_catalog
+          depends_on:
+            - task_key: build_feature_policy_year
+          notebook_task:
+            notebook_path: ../src/04_features/build_feature_catalog.py
+            base_parameters:
+              catalog_name: ${var.catalog_name}
+              schema_name: ${var.schema_name}
+          environment_key: default
+
+        - task_key: apply_metadata
+          depends_on:
+            - task_key: build_feature_policy_year
+            - task_key: build_feature_quote_training
+            - task_key: build_feature_policy_current
+            - task_key: build_feature_catalog
+          notebook_task:
+            notebook_path: ../src/00_setup/apply_metadata.py
+            base_parameters:
+              catalog_name: ${var.catalog_name}
+              schema_name: ${var.schema_name}
+          environment_key: default
+
+      environments:
+        - environment_key: default
+          spec:
+            client: "5"

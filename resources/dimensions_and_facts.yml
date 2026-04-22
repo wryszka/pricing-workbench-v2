@@ -1,0 +1,79 @@
+# Gold dimensions + facts + postcode enrichment
+resources:
+  jobs:
+    build_postcode_enrichment:
+      name: "v2 — Build Postcode Enrichment (real UK public data)"
+      parameters:
+        - name: catalog_name
+          default: ${var.catalog_name}
+        - name: schema_name
+          default: ${var.schema_name}
+      tasks:
+        - task_key: build_postcode_enrichment
+          notebook_task:
+            notebook_path: ../src/03_dimensions/build_postcode_enrichment.py
+          environment_key: default
+      environments:
+        - environment_key: default
+          spec:
+            client: "5"
+            dependencies:
+              - requests
+
+    build_dimensions_and_facts:
+      name: "v2 — Build Dimensions + Facts"
+      parameters:
+        - name: catalog_name
+          default: ${var.catalog_name}
+        - name: schema_name
+          default: ${var.schema_name}
+        - name: scale_factor
+          default: "1"
+
+      tasks:
+        # dim_companies draws from silver_company_bureau + silver_sic_directory
+        - task_key: dim_companies
+          notebook_task:
+            notebook_path: ../src/03_dimensions/generate_dim_companies.py
+            base_parameters:
+              catalog_name: ${var.catalog_name}
+              schema_name: ${var.schema_name}
+          environment_key: default
+
+        # 4-year historical quote stream — 250k rows
+        - task_key: fact_quotes
+          depends_on:
+            - task_key: dim_companies
+          notebook_task:
+            notebook_path: ../src/03_dimensions/generate_fact_quotes.py
+            base_parameters:
+              catalog_name: ${var.catalog_name}
+              schema_name: ${var.schema_name}
+          environment_key: default
+
+        # Bind converted quotes → dim_policies + dim_policy_versions, backfill converted_to_policy_id
+        - task_key: generate_policies
+          depends_on:
+            - task_key: fact_quotes
+          notebook_task:
+            notebook_path: ../src/03_dimensions/generate_policies.py
+            base_parameters:
+              catalog_name: ${var.catalog_name}
+              schema_name: ${var.schema_name}
+          environment_key: default
+
+        # Claims tied to specific (policy_id, policy_version), loss_date inside exposure period
+        - task_key: generate_claims
+          depends_on:
+            - task_key: generate_policies
+          notebook_task:
+            notebook_path: ../src/03_dimensions/generate_claims.py
+            base_parameters:
+              catalog_name: ${var.catalog_name}
+              schema_name: ${var.schema_name}
+          environment_key: default
+
+      environments:
+        - environment_key: default
+          spec:
+            client: "5"

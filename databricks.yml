@@ -1,0 +1,39 @@
+bundle:
+  name: pricing-workbench-v2
+
+variables:
+  catalog_name:
+    description: Unity Catalog name for all v2 demo tables
+    default: lr_serverless_aws_us_catalog
+  schema_name:
+    description: Schema name for the actuary-accurate data model
+    default: pricing_workbench
+  volume_name:
+    description: Volume for landing external data CSVs
+    default: external_landing
+  entity_name:
+    description: Name of the reporting undertaking
+    default: "Bricksurance SE"
+
+workspace:
+  host: https://fevm-lr-serverless-aws-us.cloud.databricks.com
+  profile: DEFAULT
+  root_path: /Workspace/Users/${workspace.current_user.userName}/pricing-workbench-v2/${bundle.target}
+
+sync:
+  exclude:
+    - src/app/frontend/node_modules/
+    - docs/
+    - "*.bak"
+    - data/
+
+targets:
+  dev:
+    mode: development
+    default: true
+
+  prod:
+    mode: production
+
+include:
+  - resources/*.yml
