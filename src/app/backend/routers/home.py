@@ -1,29 +1,42 @@
 """Home page — high-level workbench stats, grouped per pillar."""
 from __future__ import annotations
+import time
 from fastapi import APIRouter
 
-from ..db import run_sql, table_exists
+from ..db import run_sql
 from ..config import FQN, ENTITY_NAME
 
 router = APIRouter()
 
-def _scalar(sql: str, default=None):
-    try:
-        r = run_sql(sql)
-        if r and isinstance(r[0], dict) and len(r[0]) == 1:
-            return list(r[0].values())[0]
-        return r[0] if r else default
-    except Exception:
-        return default
+# Tiny 30-second memo cache so navigating between tabs doesn't re-query every time.
+# The demo data changes on factory runs, not per-click, so 30s staleness is fine.
+_CACHE: dict[str, tuple[float, object]] = {}
+def _memoize(key: str, ttl: int, fn):
+    now = time.time()
+    hit = _CACHE.get(key)
+    if hit and (now - hit[0]) < ttl:
+        return hit[1]
+    val = fn()
+    _CACHE[key] = (now, val)
+    return val
 
 @router.get("")
 def home_summary():
-    counts = {}
-    for t in ["dim_companies", "dim_policies", "dim_policy_versions",
-              "fact_quotes", "fact_claims",
-              "feature_policy_year_training", "feature_quote_training",
-              "app_audit_log", "model_comparison", "model_governance"]:
-        counts[t] = _scalar(f"SELECT COUNT(*) AS n FROM {FQN}.{t}", default=0)
+    def _counts():
+        tables = [
+            "dim_companies", "dim_policies", "dim_policy_versions",
+            "fact_quotes", "fact_claims",
+            "feature_policy_year_training", "feature_quote_training",
+            "app_audit_log", "model_comparison", "model_governance",
+        ]
+        # One query beats 10 — each COUNT is its own subquery in the SELECT list.
+        sel = ", ".join(f"(SELECT COUNT(*) FROM {FQN}.{t}) AS {t}" for t in tables)
+        try:
+            r = run_sql(f"SELECT {sel}")
+            return {k: int(v or 0) for k, v in (r[0].items() if r else [])}
+        except Exception:
+            return {t: 0 for t in tables}
+    counts = _memoize("home.counts", 30, _counts)
 
     # Champion aliases — what the pricing system would use right now
     aliases = []

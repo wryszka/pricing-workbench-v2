@@ -38,19 +38,22 @@ def feature_tables():
             "used_by": ["(online feature store)"],
         },
     ]
+    # Batch count all 3 feature tables in one round-trip
+    sel = ", ".join(f"(SELECT COUNT(*) FROM {t['fqn']}) AS t{i}" for i, t in enumerate(tables))
+    try:
+        r = run_sql(f"SELECT {sel}")
+        counts = {k: int(v or 0) for k, v in (r[0].items() if r else [])}
+    except Exception:
+        counts = {}
     out = []
-    for t in tables:
+    for i, t in enumerate(tables):
+        delta_v = None
         try:
-            r = run_sql(f"SELECT COUNT(*) AS n FROM {t['fqn']}", timeout_s=10)
-            n = int(r[0]["n"]) if r else 0
-        except Exception:
-            n = 0
-        try:
-            hist = run_sql(f"DESCRIBE HISTORY {t['fqn']} LIMIT 1", timeout_s=10)
+            hist = run_sql(f"DESCRIBE HISTORY {t['fqn']} LIMIT 1", timeout_s=5)
             delta_v = hist[0]["version"] if hist else None
         except Exception:
-            delta_v = None
-        out.append({**t, "row_count": n, "delta_version": delta_v})
+            pass
+        out.append({**t, "row_count": counts.get(f"t{i}", 0), "delta_version": delta_v})
     return {"feature_tables": out}
 
 @router.get("/{table_id}")

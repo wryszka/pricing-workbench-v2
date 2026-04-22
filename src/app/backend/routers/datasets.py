@@ -60,16 +60,27 @@ def _count(fqn: str) -> int:
 
 @router.get("")
 def list_datasets():
+    # Batch all 8 counts into one SELECT — round-trip latency was the main cost.
+    sel = []
+    for ds in DATASETS:
+        sel.append(f"(SELECT COUNT(*) FROM {FQN}.{ds['raw']})    AS raw_{ds['id']}")
+        sel.append(f"(SELECT COUNT(*) FROM {FQN}.{ds['silver']}) AS silver_{ds['id']}")
+    counts = {}
+    try:
+        r = run_sql("SELECT " + ", ".join(sel))
+        counts = {k: int(v or 0) for k, v in (r[0].items() if r else [])}
+    except Exception:
+        pass
     rows = []
     for ds in DATASETS:
-        raw_fqn    = f"{FQN}.{ds['raw']}"
-        silver_fqn = f"{FQN}.{ds['silver']}"
+        raw_c    = counts.get(f"raw_{ds['id']}", 0)
+        silver_c = counts.get(f"silver_{ds['id']}", 0)
         rows.append({
             **ds,
-            "raw_fqn":    raw_fqn,
-            "silver_fqn": silver_fqn,
-            "raw_count":    _count(raw_fqn),
-            "silver_count": _count(silver_fqn),
+            "raw_fqn":    f"{FQN}.{ds['raw']}",
+            "silver_fqn": f"{FQN}.{ds['silver']}",
+            "raw_count":    raw_c,
+            "silver_count": silver_c,
         })
     return {"datasets": rows}
 

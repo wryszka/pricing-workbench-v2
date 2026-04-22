@@ -637,7 +637,7 @@
                 title="Run AI data-quality scan"
                 subtitle="Claude reviews the silver snapshot for anomalies, outliers, schema shifts, and distribution concerns — tags findings with severity (CRITICAL / WARNING / INFO)."
                 buttonLabel="Scan dataset"
-                body={{ dataset_id: id, user: reviewer }} />
+                body={{ dataset_id: id, user: me?.email || "" }} />
             </div>
 
             <div className="flex gap-1 mb-3 border-b border-slate-200">

@@ -64,9 +64,10 @@ def fairness():
 
 @router.get("/lineage")
 def lineage_summary():
-    """High-level lineage: for each feature_table, list upstream tables + Delta versions."""
-    out = {"feature_tables": [], "silver": [], "raw": []}
-    for tbl, bucket in [
+    """High-level lineage: for each feature_table, list upstream tables + row counts.
+    Delta versions are pulled lazily — only DESCRIBE HISTORY works for Delta tables,
+    so we skip that for DLT MVs (they show 'DLT-managed')."""
+    TABLES = [
         ("feature_policy_year_training", "feature_tables"),
         ("feature_quote_training",       "feature_tables"),
         ("feature_policy_current",       "feature_tables"),
@@ -79,16 +80,22 @@ def lineage_summary():
         ("raw_sic_directory",            "raw"),
         ("raw_geo_hazard",               "raw"),
         ("raw_market_benchmark",         "raw"),
-    ]:
+    ]
+    # Batch all 12 counts into one query
+    sel = ", ".join(f"(SELECT COUNT(*) FROM {FQN}.{t}) AS {t}" for t, _ in TABLES)
+    try:
+        r = run_sql(f"SELECT {sel}")
+        counts = {k: int(v or 0) for k, v in (r[0].items() if r else [])}
+    except Exception:
+        counts = {}
+    out = {"feature_tables": [], "silver": [], "raw": []}
+    for tbl, bucket in TABLES:
+        # Try Delta version — cheap on Delta, fails on DLT MVs (which is fine)
+        v = None
         try:
-            hist = run_sql(f"DESCRIBE HISTORY {FQN}.{tbl} LIMIT 1", timeout_s=10)
+            hist = run_sql(f"DESCRIBE HISTORY {FQN}.{tbl} LIMIT 1", timeout_s=5)
             v = hist[0]["version"] if hist else None
         except Exception:
-            v = None
-        try:
-            cnt = run_sql(f"SELECT COUNT(*) AS n FROM {FQN}.{tbl}", timeout_s=10)
-            n = int(cnt[0]["n"]) if cnt else 0
-        except Exception:
-            n = 0
-        out[bucket].append({"table": tbl, "delta_version": v, "row_count": n})
+            v = "DLT-managed" if bucket == "silver" else None
+        out[bucket].append({"table": tbl, "delta_version": v, "row_count": counts.get(tbl, 0)})
     return out
