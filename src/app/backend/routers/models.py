@@ -1,7 +1,6 @@
 """Model Factory tab — registered models, UC aliases, champion/challenger table, MLflow runs."""
 from __future__ import annotations
 from fastapi import APIRouter, HTTPException
-from databricks.sdk.service.ml import ModelVersionInfo
 
 from ..db import run_sql, get_client
 from ..config import CATALOG, SCHEMA, FQN
