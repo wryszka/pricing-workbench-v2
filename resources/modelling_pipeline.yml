@@ -1,0 +1,97 @@
+# Phase 2 — model factory: train every candidate, compare on 2024 test slice,
+# alias champions in Unity Catalog Model Registry.
+resources:
+  jobs:
+    train_pricing_models:
+      name: "v2 — Train Pricing Models (factory)"
+      parameters:
+        - name: catalog_name
+          default: ${var.catalog_name}
+        - name: schema_name
+          default: ${var.schema_name}
+
+      tasks:
+        # ---- Compound approach (transparent, additive) ----
+        - task_key: train_frequency_glm
+          notebook_task:
+            notebook_path: ../src/05_modelling/01_train_frequency_glm.py
+            base_parameters:
+              catalog_name: ${var.catalog_name}
+              schema_name: ${var.schema_name}
+          environment_key: glm
+
+        - task_key: train_severity_glm
+          notebook_task:
+            notebook_path: ../src/05_modelling/02_train_severity_glm.py
+            base_parameters:
+              catalog_name: ${var.catalog_name}
+              schema_name: ${var.schema_name}
+          environment_key: glm
+
+        - task_key: train_severity_gbm
+          notebook_task:
+            notebook_path: ../src/05_modelling/03_train_severity_gbm.py
+            base_parameters:
+              catalog_name: ${var.catalog_name}
+              schema_name: ${var.schema_name}
+          environment_key: gbm
+
+        # ---- Demand model ----
+        - task_key: train_demand_gbm
+          notebook_task:
+            notebook_path: ../src/05_modelling/04_train_demand_gbm.py
+            base_parameters:
+              catalog_name: ${var.catalog_name}
+              schema_name: ${var.schema_name}
+          environment_key: gbm
+
+        # ---- Alt frameworks ----
+        - task_key: train_frequency_pymc
+          notebook_task:
+            notebook_path: ../src/05_modelling/05_train_frequency_pymc.py
+            base_parameters:
+              catalog_name: ${var.catalog_name}
+              schema_name: ${var.schema_name}
+              sample_size: "10000"
+              draws: "500"
+          environment_key: default
+
+        - task_key: train_pure_premium_xgboost
+          notebook_task:
+            notebook_path: ../src/05_modelling/06_train_pure_premium_xgboost.py
+            base_parameters:
+              catalog_name: ${var.catalog_name}
+              schema_name: ${var.schema_name}
+          environment_key: gbm
+
+        # ---- Champion selection ----
+        - task_key: model_factory
+          depends_on:
+            - task_key: train_frequency_glm
+            - task_key: train_severity_glm
+            - task_key: train_severity_gbm
+            - task_key: train_demand_gbm
+            - task_key: train_pure_premium_xgboost
+          notebook_task:
+            notebook_path: ../src/05_modelling/07_model_factory.py
+            base_parameters:
+              catalog_name: ${var.catalog_name}
+              schema_name: ${var.schema_name}
+          environment_key: gbm
+
+      environments:
+        - environment_key: default
+          spec:
+            client: "5"
+        - environment_key: glm
+          spec:
+            client: "5"
+            dependencies:
+              - statsmodels
+        - environment_key: gbm
+          spec:
+            client: "5"
+            dependencies:
+              - lightgbm
+              - xgboost
+              - statsmodels
