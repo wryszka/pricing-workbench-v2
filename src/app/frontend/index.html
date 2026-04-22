@@ -72,6 +72,8 @@
         Database, FlaskConical, Boxes, FileText, Rocket, Activity,
         Shield, Zap, LineChart, BookOpen, ArrowRight, ArrowLeft,
         ChevronRight, Trophy, CheckCircle2, XCircle, Clock, Download,
+        AlertTriangle, Gauge, GitBranch, Layers, Scale, Search,
+        ShieldCheck, TrendingUp, Info, Network, Sparkles, Target,
       } from "lucide-react";
 
       // ---------- fetch wrapper ----------
@@ -174,6 +176,86 @@
         );
       }
 
+      function InfoBanner({ icon: Icon = Info, tone = "blue", title, children }) {
+        const tones = {
+          blue:   "bg-blue-50 border-blue-200 text-blue-900 [&_strong]:text-blue-950",
+          amber:  "bg-amber-50 border-amber-200 text-amber-900",
+          emerald:"bg-emerald-50 border-emerald-200 text-emerald-900",
+          slate:  "bg-slate-50 border-slate-200 text-slate-800",
+        };
+        return (
+          <div className={`border rounded-lg p-4 mb-6 flex items-start gap-3 ${tones[tone]}`}>
+            <div className="shrink-0 mt-0.5"><Icon size={18} /></div>
+            <div className="text-sm leading-relaxed flex-1">
+              {title && <div className="font-medium mb-1">{title}</div>}
+              {children}
+            </div>
+          </div>
+        );
+      }
+
+      function FeatureBadge({ children }) {
+        return <span className="inline-block text-[10px] bg-white/70 border border-current/20 rounded px-1.5 py-0.5 mr-1 mb-1">{children}</span>;
+      }
+
+      // Tiny SVG bar chart — horizontal bars, label on left, value on right.
+      function BarChart({ data, unit = "", color = "#3b82f6", maxWidth = 360 }) {
+        if (!data || data.length === 0) return <div className="text-xs text-slate-500 italic">No data</div>;
+        const max = Math.max(...data.map((d) => d.value), 1);
+        return (
+          <div className="space-y-1.5">
+            {data.map((d) => {
+              const w = (d.value / max) * maxWidth;
+              return (
+                <div key={d.label} className="flex items-center gap-2 text-xs">
+                  <div className="w-36 truncate text-slate-700">{d.label}</div>
+                  <div className="flex-1 relative h-4 bg-slate-100 rounded">
+                    <div className="absolute left-0 top-0 h-4 rounded" style={{ width: `${(d.value / max) * 100}%`, backgroundColor: color }} />
+                  </div>
+                  <div className="w-20 text-right font-mono text-slate-700">{typeof d.value === "number" ? d.value.toLocaleString() : d.value}{unit}</div>
+                </div>
+              );
+            })}
+          </div>
+        );
+      }
+
+      // Horizontal flow diagram for Home — 7 stages with arrows between.
+      function DataFlowDiagram() {
+        const stages = [
+          { icon: Database,     label: "External feeds",   sub: "4 CSVs → bronze",  color: "text-blue-600 bg-blue-50" },
+          { icon: Layers,       label: "DLT silver",       sub: "5 validated views", color: "text-cyan-600 bg-cyan-50" },
+          { icon: Boxes,        label: "Dim + fact",       sub: "Policies · claims", color: "text-sky-600 bg-sky-50" },
+          { icon: GitBranch,    label: "Feature tables",   sub: "Point-in-time join",color: "text-indigo-600 bg-indigo-50" },
+          { icon: FlaskConical, label: "Model factory",    sub: "GLM · GBM · XGB",  color: "text-violet-600 bg-violet-50" },
+          { icon: FileText,     label: "Regulatory report",sub: "SHAP · PDP · lineage", color: "text-emerald-600 bg-emerald-50" },
+          { icon: Shield,       label: "Governance",       sub: "Fairness · audit",  color: "text-slate-700 bg-slate-100" },
+        ];
+        return (
+          <div className="overflow-x-auto pb-2">
+            <div className="flex items-center gap-1 min-w-max">
+              {stages.map((s, i) => {
+                const Icon = s.icon;
+                return (
+                  <React.Fragment key={s.label}>
+                    <div className="flex flex-col items-center text-center shrink-0 w-36">
+                      <div className={`w-12 h-12 rounded-full flex items-center justify-center ${s.color}`}>
+                        <Icon size={22} />
+                      </div>
+                      <div className="mt-2 text-xs font-medium text-slate-800">{s.label}</div>
+                      <div className="text-[11px] text-slate-500 leading-tight mt-0.5">{s.sub}</div>
+                    </div>
+                    {i < stages.length - 1 && (
+                      <div className="shrink-0 text-slate-400"><ArrowRight size={16} /></div>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </div>
+          </div>
+        );
+      }
+
       function Table({ columns, rows, empty = "No data" }) {
         if (!rows || rows.length === 0)
           return <div className="text-sm text-slate-500 italic py-4">{empty}</div>;
@@ -205,36 +287,107 @@
 
       // ---------- pages ----------
       const PILLAR_META = {
-        ingestion:  { icon: Database,     description: "4 vendor feeds → silver → gold. DLT data-quality gates, approval workflow." },
-        features:   { icon: Boxes,        description: "Policy-year training + quote training + serving-time lookup tables." },
-        modelling:  { icon: FlaskConical, description: "GLM + GBM + XGBoost + PyMC. Champion/challenger in UC model registry." },
-        reports:    { icon: FileText,     description: "Per-model regulatory reports — lineage, SHAP reason codes, fairness audit." },
-        serving:    { icon: Rocket,       description: "Model serving endpoint + online feature store. (Phase 4 — placeholder)" },
-        governance: { icon: Shield,       description: "Audit log, dataset approvals, fairness report, model governance table." },
+        ingestion:  { icon: Database,     description: "Four vendor feeds land as CSVs, pass DLT quality gates, and require an actuary approval before they can feed the feature store.",
+                      badges: ["DLT silver", "Actuary approvals", "Delta history", "Shadow pricing"] },
+        features:   { icon: Boxes,        description: "Three point-in-time feature tables: training on policy-year grain, training on quote grain, serving lookup for in-force policies.",
+                      badges: ["Point-in-time", "Feature store", "Catalog lineage", "Sensitivity flags"] },
+        modelling:  { icon: FlaskConical, description: "Compound pricing (freq × sev GLM/GBM), single-shot Tweedie XGBoost, Bayesian PyMC, demand GBM. Champions aliased in UC.",
+                      badges: ["Poisson GLM", "LightGBM", "XGBoost Tweedie", "PyMC", "Monotonicity", "UC aliases"] },
+        reports:    { icon: FileText,     description: "Per-model regulatory markdown bundles — lineage from model back to CSV, TreeSHAP reason codes, partial-dependence plots, protected-attribute audit.",
+                      badges: ["TreeSHAP", "PDP", "Calibration", "Double-lift", "Fairness"] },
+        serving:    { icon: Rocket,       description: "Placeholder for the pricing serving endpoint + online feature store. Champion aliases are already in place, so deploy is a follow-up.",
+                      badges: ["Phase 4", "Online FS", "Model Serving"] },
+        governance: { icon: Shield,       description: "Every dataset approval, every model decision, every agent call is logged. Fairness + monotonicity audit runs every factory execution.",
+                      badges: ["Audit log", "Fairness check", "Lineage graph"] },
       };
 
       function Home() {
         const [data, setData] = useState(null);
         const [err, setErr] = useState(null);
-        useEffect(() => { api("home").then(setData).catch((e) => setErr(String(e))); }, []);
+        const [comparison, setComparison] = useState([]);
+        useEffect(() => {
+          api("home").then(setData).catch((e) => setErr(String(e)));
+          api("models/comparison").then((r) => setComparison(r.rows || [])).catch(() => {});
+        }, []);
         if (err) return <div className="text-red-600 text-sm">{err}</div>;
         if (!data) return <div className="text-slate-500 text-sm">Loading…</div>;
         const c = data.counts;
         return (
           <>
-            <PageHeader title={`${data.entity} — Pricing Workbench`} subtitle={`Unity Catalog: ${data.catalog}`} />
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+            <PageHeader title={`${data.entity} — Pricing Workbench v2`} subtitle={`Unity Catalog: ${data.catalog}`} />
+
+            {/* Hero narrative + data-flow diagram */}
+            <div className="bg-gradient-to-br from-blue-600 to-indigo-700 text-white rounded-lg p-6 mb-6">
+              <div className="flex items-start gap-3">
+                <Target size={22} className="mt-0.5 shrink-0" />
+                <div>
+                  <h2 className="font-semibold text-lg">Actuary-accurate. Explainable by design.</h2>
+                  <p className="text-sm text-blue-50 mt-1 leading-relaxed max-w-3xl">
+                    A synthetic commercial-insurance pricing pipeline that meets a regulator's bar end-to-end:
+                    every feature traces back to a CSV, every model ships with a markdown report that answers
+                    "why is this postcode more expensive?", and every factory run re-runs fairness + monotonicity
+                    checks. No feature is used that could proxy a protected attribute.
+                  </p>
+                </div>
+              </div>
+            </div>
+            <Card className="mb-6">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-medium text-slate-800 flex items-center gap-2"><Network size={16} /> End-to-end data flow</h3>
+                <div className="text-xs text-slate-500">raw → silver → gold → models → reports → governance</div>
+              </div>
+              <DataFlowDiagram />
+            </Card>
+
+            {/* Counts — richer layout with grouping */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
               <Card><StatNumber value={fmt(c.dim_companies)} label="Companies" /></Card>
               <Card><StatNumber value={fmt(c.dim_policies)} label="Policies" hint={`${fmt(c.dim_policy_versions)} versions`} /></Card>
               <Card><StatNumber value={fmt(c.fact_quotes)} label="Quotes (4-year)" /></Card>
               <Card><StatNumber value={fmt(c.fact_claims)} label="Claims" /></Card>
-              <Card><StatNumber value={fmt(c.feature_policy_year_training)} label="Training rows (policy-year)" /></Card>
-              <Card><StatNumber value={fmt(c.feature_quote_training)} label="Training rows (quote)" /></Card>
-              <Card><StatNumber value={fmt(c.model_governance)} label="Generated reports" /></Card>
-              <Card><StatNumber value={fmt(c.app_audit_log)} label="Audit events" /></Card>
+              <Card><StatNumber value={fmt(c.feature_policy_year_training)} label="Policy-year training rows" /></Card>
+              <Card><StatNumber value={fmt(c.feature_quote_training)} label="Quote training rows" /></Card>
+              <Card><StatNumber value={fmt(c.model_governance)} label="Regulatory reports generated" /></Card>
+              <Card><StatNumber value={fmt(c.app_audit_log)} label="Audit events logged" /></Card>
             </div>
+
+            {/* Current pricing state — champion aliases + model comparison */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+              <Card title="Current pricing champions"
+                right={<Link to="/model-factory" className="text-xs text-blue-600 hover:underline">model factory →</Link>}>
+                <div className="text-xs text-slate-500 mb-3">These aliases resolve to specific UC model versions. The pricing engine would use them in production.</div>
+                <ul className="space-y-2">
+                  {[
+                    { alias: "pricing_champion_frequency", model: "freq_glm",         role: "Expected claim count per policy-year" },
+                    { alias: "pricing_champion_severity",  model: "sev_gbm",          role: "Expected cost per claim (Gamma GBM)" },
+                    { alias: "pricing_champion_single",    model: "pure_premium_xgb", role: "Single-shot Tweedie alternative" },
+                    { alias: "demand_champion",            model: "demand_gbm",       role: "Probability a quote converts" },
+                  ].map((x) => (
+                    <li key={x.alias} className="flex items-start gap-2 text-sm">
+                      <Trophy size={14} className="text-emerald-600 mt-0.5" />
+                      <div className="flex-1">
+                        <div><span className="font-medium">{x.alias}</span> → <code className="bg-slate-100 px-1 rounded text-xs">{x.model}</code></div>
+                        <div className="text-xs text-slate-500">{x.role}</div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+              <Card title="Champion/challenger — 2024 test Gini"
+                right={<Link to="/model-factory" className="text-xs text-blue-600 hover:underline">details →</Link>}>
+                <BarChart
+                  data={comparison.slice(0, 5).map((r) => ({
+                    label: r.model?.replace(/ \(.*\)/, "").replace("compound_", ""),
+                    value: Number(Number(r.gini_on_incurred).toFixed(4)),
+                  }))}
+                  color="#6366f1"
+                />
+              </Card>
+            </div>
+
+            {/* Pillars — richer cards with badges */}
             <h2 className="text-lg font-semibold text-slate-800 mb-3">Pillars</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
               {data.pillars.map((p) => {
                 const meta = PILLAR_META[p.id] || {};
                 const Icon = meta.icon || Shield;
@@ -242,28 +395,28 @@
                   <Link key={p.id} to={p.path}
                     className="block bg-white rounded-lg border border-slate-200 p-5 hover:border-blue-400 hover:shadow-sm transition">
                     <div className="flex items-start gap-3">
-                      <div className="p-2 rounded bg-blue-50 text-blue-600 shrink-0"><Icon size={18} /></div>
-                      <div className="flex-1">
+                      <div className="p-2 rounded bg-blue-50 text-blue-600 shrink-0"><Icon size={20} /></div>
+                      <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between">
                           <div className="font-medium text-slate-900">{p.name}</div>
                           <ArrowRight size={14} className="text-slate-400" />
                         </div>
                         <p className="text-sm text-slate-600 mt-1 leading-relaxed">{meta.description}</p>
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {(meta.badges || []).map((b) => <Badge key={b} tone="slate">{b}</Badge>)}
+                        </div>
                       </div>
                     </div>
                   </Link>
                 );
               })}
             </div>
-            <div className="mt-8">
-              <Card title="About this demo">
-                <div className="text-sm text-slate-700 space-y-2">
-                  <p><strong>Bricksurance SE Pricing Workbench v2</strong> is a synthetic commercial-insurance pricing pipeline designed to demonstrate an actuary-accurate data model, a full model factory (GLM + GBM + XGBoost + PyMC), and regulator-ready explainability end-to-end.</p>
-                  <p>Every feature traces back to a source CSV → bronze → DLT silver → feature table → model via Delta versioning + MLflow dataset lineage. Every model gets a markdown report with SHAP reason codes, partial-dependence plots, and a protected-attribute audit.</p>
-                  <p className="text-xs text-slate-500"><Badge tone="amber">synthetic data</Badge> All data is simulated. No real Bricksurance or partner data is used.</p>
-                </div>
-              </Card>
-            </div>
+
+            <InfoBanner icon={AlertTriangle} tone="amber" title="About this demo">
+              <p><strong>Bricksurance SE Pricing Workbench v2</strong> is a synthetic commercial-insurance pricing pipeline.
+              All data is simulated — no real Bricksurance or partner data is used. Everything you see is generated by the
+              notebooks in <code>src/00_setup</code> / <code>src/03_dimensions</code> at demo time.</p>
+            </InfoBanner>
           </>
         );
       }
@@ -276,6 +429,16 @@
           <>
             <PageHeader title="External Data"
               subtitle="Four vendor feeds arrive as CSVs in the external_landing volume, ingested to raw_* tables, then validated by DLT into silver_* tables." />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+              <InfoBanner icon={Database} tone="blue" title="Databricks features demonstrated on this page">
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {["Unity Catalog volumes", "Auto Loader", "DLT expectations", "Delta time travel", "Column-level lineage", "Audit tables"].map((b) => <FeatureBadge key={b}>{b}</FeatureBadge>)}
+                </div>
+              </InfoBanner>
+              <InfoBanner icon={ShieldCheck} tone="emerald" title="Why the actuary cares">
+                Each new vendor file is a potential pricing-relativities shift. An actuary reviews row counts, DQ drops, and value deltas <em>before</em> the feed is allowed downstream. The approval is written to <code>app_dataset_approvals</code> with a full audit-log entry.
+              </InfoBanner>
+            </div>
             {err && <div className="text-red-600 text-sm mb-4">{err}</div>}
             <Card>
               <Table empty={data ? "No datasets" : "Loading…"}
@@ -424,10 +587,44 @@
           api("features").then((r) => setFts(r.feature_tables)).catch(() => {});
           api("features/catalog").then((r) => setCatalog(r.features)).catch(() => {});
         }, []);
+        const groupCounts = catalog.reduce((m, f) => {
+          m[f.feature_group] = (m[f.feature_group] || 0) + 1; return m;
+        }, {});
         return (
           <>
             <PageHeader title="Feature Tables"
               subtitle="Point-in-time joins live here. These are the tables every model consumes — versioned in Delta, tracked in MLflow." />
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+              <InfoBanner icon={Boxes} tone="blue" title="Databricks features on this page">
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {["Delta time travel", "Feature Store", "MLflow dataset lineage", "Column masking", "Unity Catalog tags", "Data quality gates"].map((b) => <FeatureBadge key={b}>{b}</FeatureBadge>)}
+                </div>
+              </InfoBanner>
+              <InfoBanner icon={Target} tone="emerald" title="The point of this layer">
+                Training is <strong>temporally separate</strong> from scoring. Training reads the policy-year grain with labels; serving reads the in-force lookup without labels. The feature catalog records source, transformation, and sensitivity for every column — this is the auditable trail a regulator asks for.
+              </InfoBanner>
+            </div>
+
+            <Card title="Upstream sources feeding these features" className="mb-6">
+              <div className="text-xs text-slate-500 mb-3">Every feature in the catalog ultimately derives from one of these silver tables, which in turn derives from an ingested CSV. Click <Link className="text-blue-600 hover:underline" to="/governance">Governance → Lineage</Link> for Delta versions.</div>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                {[
+                  { t: "silver_company_bureau",     n: "company_registration_number", tag: "credit" },
+                  { t: "silver_sic_directory",      n: "sic_code",                     tag: "sector" },
+                  { t: "silver_geo_hazard",         n: "postcode",                     tag: "hazard" },
+                  { t: "silver_market_benchmark",   n: "SIC × region × quarter",       tag: "market" },
+                  { t: "silver_postcode_enrichment",n: "postcode_sector",              tag: "geo"    },
+                ].map((s) => (
+                  <div key={s.t} className="border border-slate-200 rounded p-3">
+                    <div className="flex items-center gap-1 text-[11px] text-slate-500"><Database size={11} />{s.tag}</div>
+                    <code className="text-xs text-blue-700 break-all">{s.t}</code>
+                    <div className="text-[11px] text-slate-500 mt-1">keyed on <code>{s.n}</code></div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+
             <div className="space-y-4 mb-8">
               {fts.map((ft) => (
                 <Link key={ft.id} to={`/feature-table/${ft.id}`}
@@ -453,7 +650,8 @@
                 </Link>
               ))}
             </div>
-            <Card title={`Feature catalog (${catalog.length} features)`}>
+            <Card title={`Feature catalog (${catalog.length} features)`}
+              right={<div className="flex gap-1 flex-wrap">{Object.entries(groupCounts).map(([g, n]) => <Badge key={g} tone="slate">{g}: {n}</Badge>)}</div>}>
               <Table empty="Loading…"
                 columns={[
                   { key: "feature_name",   label: "Feature", className: "font-medium" },
@@ -632,6 +830,18 @@
           <>
             <PageHeader title="Model Factory"
               subtitle="Every pricing candidate trained against feature_policy_year_training. Champion aliases resolved on UC Model Registry." />
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+              <InfoBanner icon={FlaskConical} tone="blue" title="Databricks features on this page">
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {["MLflow tracking", "UC Model Registry", "Model version aliases", "Serverless jobs", "Dataset lineage", "Environment specs"].map((b) => <FeatureBadge key={b}>{b}</FeatureBadge>)}
+                </div>
+              </InfoBanner>
+              <InfoBanner icon={Scale} tone="emerald" title="Champion/challenger discipline">
+                Every candidate is trained on the same temporal split and scored on the same 2024 test slice. The factory ranks them by Gini on incurred losses, writes <code>model_comparison</code>, and aliases the winners — so pricing always resolves a specific model version, never a pinned string.
+              </InfoBanner>
+            </div>
+
             <Card title="Champion/challenger comparison" className="mb-6"
               right={<div className="text-xs text-slate-500">From <code>model_comparison</code> · 2024 test slice</div>}>
               <Table empty="No comparison data. Run the model_factory task."
@@ -739,6 +949,19 @@
           <>
             <PageHeader title="Regulatory Reports"
               subtitle="One report per registered model — lineage, SHAP reason codes, PDP plots, fairness audit." />
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              <InfoBanner icon={FileText} tone="blue" title="What's in each report">
+                Exec summary, upstream lineage (feature table → silver → raw CSV), feature catalog with transformation + sensitivity flags, fit diagnostics (GLM coefficients OR TreeSHAP importance), calibration + Gini lift, partial-dependence plots, SHAP reason codes for 3 sample predictions, protected-attribute audit.
+              </InfoBanner>
+              <InfoBanner icon={Sparkles} tone="emerald" title="GBMs vs GLMs explainability">
+                Regulators historically distrust GBMs as black boxes. Each report's <strong>Section 6</strong> shows a partial-dependence plot for every top feature — the direct analogue of a GLM's relativity curve. <strong>Section 7</strong> decomposes individual predictions via TreeSHAP: exact, additive, auditable.
+              </InfoBanner>
+              <InfoBanner icon={ShieldCheck} tone="amber" title="Protected-attribute absence">
+                Commercial book, no individuals. Every report explicitly enumerates the attributes that are <strong>not</strong> used (gender, age, ethnicity, etc.) and cross-references the fairness audit on the Governance tab.
+              </InfoBanner>
+            </div>
+
             <Card>
               <Table empty="No reports generated yet."
                 columns={[
@@ -827,9 +1050,28 @@
           api("governance/audit?limit=200").then((r) => setAudit(r.events)).catch(() => {});
           api("governance/lineage").then(setLineage).catch(() => {});
         }, []);
+        const totalEvents   = (summary?.event_counts    || []).reduce((s, r) => s + Number(r.n || 0), 0);
+        const approvedCount = (summary?.dataset_approvals || []).find((r) => r.decision === "approved")?.n || 0;
+        const fairnessPass  = (summary?.fairness        || []).filter((r) => r.status === "PASS").length;
+        const fairnessTotal = (summary?.fairness        || []).length;
         return (
           <>
             <PageHeader title="Governance" subtitle="Audit log, dataset approvals, fairness report, data lineage." />
+
+            <InfoBanner icon={Shield} tone="blue" title="Why this page exists">
+              A Solvency II / PRA auditor needs to reconstruct the state of the world when any model decision was made.
+              Every dataset approval, model decision, and agent action is logged to <code>app_audit_log</code>; every
+              feature table has a Delta version; every model has an MLflow run. Combined, this tab is the regulator's
+              single point of entry.
+            </InfoBanner>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+              <Card><StatNumber value={fmt(totalEvents)}      label="Total audit events" /></Card>
+              <Card><StatNumber value={fmt(approvedCount)}    label="Approved datasets" /></Card>
+              <Card><StatNumber value={`${fairnessPass}/${fairnessTotal}`} label="Fairness checks" hint="PASS / total" /></Card>
+              <Card><StatNumber value={fmt((summary?.event_counts || []).length)} label="Event types logged" /></Card>
+            </div>
+
             <div className="flex gap-1 mb-3 border-b border-slate-200">
               {["overview", "audit", "fairness", "lineage"].map((t) => (
                 <button key={t} onClick={() => setTab(t)}
@@ -952,35 +1194,110 @@
 
       function Monitoring() {
         const [comparison, setComparison] = useState([]);
-        useEffect(() => { api("models/comparison").then((r) => setComparison(r.rows)).catch(() => {}); }, []);
+        const [lineage, setLineage] = useState(null);
+        const [fairness, setFairness] = useState([]);
+        useEffect(() => {
+          api("models/comparison").then((r) => setComparison(r.rows || [])).catch(() => {});
+          api("governance/lineage").then(setLineage).catch(() => {});
+          api("governance/fairness").then((r) => setFairness(r.checks || [])).catch(() => {});
+        }, []);
+        const fairnessPass  = fairness.filter((r) => r.status === "PASS").length;
+        const fairnessTotal = fairness.length;
         return (
           <>
-            <PageHeader title="Monitoring" subtitle="Live drift + latency dashboards are Phase 4 work. For now, shows latest factory comparison." />
-            <Card>
-              <div className="flex items-start gap-4 mb-4">
-                <div className="p-3 rounded-full bg-amber-50 text-amber-600 shrink-0"><Activity size={20} /></div>
-                <div className="text-sm text-slate-600">
-                  Drift detection (PSI per feature, rolling Gini, endpoint p50/p95 latency) is deferred to Phase 4. Factory test metrics below are the current proxy.
+            <PageHeader title="Monitoring" subtitle="Head of Pricing asks every morning: is the book behaving? Is the model still calibrated? What landed overnight?" />
+
+            <InfoBanner icon={Gauge} tone="blue" title="What's here vs Phase 4">
+              Live drift detection (PSI per feature, rolling Gini, endpoint p50/p95) requires the serving endpoint from Phase 4. This page today surfaces the <em>offline</em> signals: factory test-set metrics, DLT pass rates, dataset freshness, fairness audit, and Delta versions so you can see when anything last changed.
+            </InfoBanner>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <Card title="Model stability — test-set Gini by candidate">
+                <div className="text-xs text-slate-500 mb-2">Higher = better discrimination. Tracks the champion/challenger race over every factory run.</div>
+                <BarChart
+                  data={comparison.map((r) => ({
+                    label: r.model?.replace(/ \(.*\)/, "").replace("compound_", ""),
+                    value: Number(Number(r.gini_on_incurred).toFixed(4)),
+                  }))}
+                  color="#6366f1" />
+              </Card>
+
+              <Card title="Portfolio calibration — predicted / actual total">
+                <div className="text-xs text-slate-500 mb-2">1.00 = perfectly calibrated. &lt;1 underpredicts, &gt;1 overpredicts.</div>
+                <Table empty="—"
+                  columns={[
+                    { key: "model", label: "Candidate", className: "font-medium text-xs" },
+                    { key: "total_ratio", label: "Ratio", render: (r) => (
+                      <span className={`font-mono text-sm ${
+                        Math.abs(Number(r.total_ratio) - 1) > 0.1 ? "text-red-600"
+                          : Math.abs(Number(r.total_ratio) - 1) > 0.05 ? "text-amber-600"
+                          : "text-emerald-700"
+                      }`}>{Number(r.total_ratio).toFixed(4)}</span>
+                    ) },
+                    { key: "status", label: "State", render: (r) => {
+                      const d = Math.abs(Number(r.total_ratio) - 1);
+                      if (d < 0.05) return <Badge tone="green">healthy</Badge>;
+                      if (d < 0.1)  return <Badge tone="amber">drift</Badge>;
+                      return <Badge tone="red">miscalibrated</Badge>;
+                    } },
+                  ]}
+                  rows={comparison} />
+              </Card>
+
+              <Card title="Data freshness — latest Delta commit">
+                <div className="text-xs text-slate-500 mb-2">When did each upstream table last change? Stale raw data is the earliest drift signal.</div>
+                <Table empty="—"
+                  columns={[
+                    { key: "table",         label: "Table",   className: "font-mono text-xs" },
+                    { key: "delta_version", label: "Delta v", render: (r) => <Badge tone="blue">v{r.delta_version ?? "?"}</Badge> },
+                    { key: "row_count",     label: "Rows",    render: (r) => fmt(r.row_count) },
+                  ]}
+                  rows={[...(lineage?.raw ?? []), ...(lineage?.silver ?? [])]} />
+              </Card>
+
+              <Card title="Fairness + robustness — cross-model audit"
+                right={<Link to="/governance" className="text-xs text-blue-600 hover:underline">full audit →</Link>}>
+                <div className="mb-3">
+                  <div className="text-2xl font-semibold text-slate-900">{fairnessPass}/{fairnessTotal}</div>
+                  <div className="text-xs uppercase tracking-wide text-slate-500">checks passing</div>
                 </div>
-              </div>
-              <Table empty="No data"
-                columns={[
-                  { key: "model", label: "Candidate", className: "font-medium" },
-                  { key: "gini_on_incurred", label: "Gini", render: (r) => (
-                    <span className="font-mono text-sm">{Number(r.gini_on_incurred).toFixed(4)}</span>
-                  ) },
-                  { key: "rmse", label: "RMSE", render: (r) => fmt(r.rmse) },
-                  { key: "total_ratio", label: "Total ratio", render: (r) => Number(r.total_ratio).toFixed(4) },
-                  { key: "_evaluated_at", label: "At" },
-                  { key: "status", label: "Status", render: (r) => {
-                    const tr = Number(r.total_ratio);
-                    if (Math.abs(tr - 1) < 0.05) return <Badge tone="green">healthy</Badge>;
-                    if (Math.abs(tr - 1) < 0.1) return <Badge tone="amber">drift</Badge>;
-                    return <Badge tone="red">miscalibrated</Badge>;
-                  } },
-                ]}
-                rows={comparison} />
-            </Card>
+                <Table empty="—"
+                  columns={[
+                    { key: "check", label: "Check" },
+                    { key: "status", label: "", render: (r) => {
+                      if (r.status === "PASS") return <Badge tone="green">PASS</Badge>;
+                      if (r.status === "FAIL") return <Badge tone="red">FAIL</Badge>;
+                      return <Badge tone="slate">{r.status}</Badge>;
+                    } },
+                    { key: "detail", label: "Detail", className: "text-xs text-slate-500" },
+                  ]}
+                  rows={fairness} />
+              </Card>
+
+              <Card title="Operational — feature tables">
+                <div className="text-xs text-slate-500 mb-2">Row counts and current version of every feature table the models consume.</div>
+                <Table empty="—"
+                  columns={[
+                    { key: "table",         label: "Feature table", className: "font-mono text-xs" },
+                    { key: "delta_version", label: "Delta v",        render: (r) => <Badge tone="blue">v{r.delta_version ?? "?"}</Badge> },
+                    { key: "row_count",     label: "Rows",           render: (r) => fmt(r.row_count) },
+                  ]}
+                  rows={lineage?.feature_tables ?? []} />
+              </Card>
+
+              <Card title="Alerting — planned">
+                <div className="text-sm text-slate-600 space-y-2">
+                  <p>When the serving endpoint lands in Phase 4, this panel surfaces:</p>
+                  <ul className="list-disc pl-5 space-y-1 text-slate-600">
+                    <li>PSI &gt; 0.2 on any top-10 feature (population drift)</li>
+                    <li>Rolling 30-day Gini down &gt;10% vs baseline</li>
+                    <li>p95 latency &gt; 200ms on pricing endpoint</li>
+                    <li>Any fairness check flipping PASS → FAIL overnight</li>
+                  </ul>
+                  <p className="text-xs text-slate-500 italic">Alerts will feed the Governance audit log so they are fully traceable.</p>
+                </div>
+              </Card>
+            </div>
           </>
         );
       }
